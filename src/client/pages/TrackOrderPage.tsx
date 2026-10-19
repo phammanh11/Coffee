@@ -1,53 +1,77 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { PackageSearch, Clock, MapPin, Phone, User } from 'lucide-react';
-import { api } from '../services/api';
+import { api, getLocalCachedOrders } from '../services/api';
 import type { Order } from '../../shared/types';
 import { formatVND, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '../../shared/constants';
 
 export default function TrackOrderPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialCode = searchParams.get('code') || '';
+  const initialPhone = searchParams.get('phone') || '';
 
   const [code, setCode] = useState(initialCode);
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(initialPhone);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [order, setOrder] = useState<Order | null>(null);
+  const [phoneOrderList, setPhoneOrderList] = useState<Order[]>([]);
 
   const lookupOrder = async (targetCode: string, targetPhone?: string) => {
-    if (!targetCode.trim()) {
-      setError('Vui lòng nhập mã đơn hàng của bạn.');
+    const cleanCode = targetCode.trim();
+    const cleanPhone = (targetPhone || '').trim();
+    if (!cleanCode && !cleanPhone) {
+      setError('Vui lòng nhập Mã đơn hàng hoặc Số điện thoại đặt hàng của bạn.');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      const res = await api.trackOrder(targetCode.trim(), targetPhone?.trim());
+      const res = await api.trackOrder(cleanCode, cleanPhone);
       setOrder(res);
+      if (res.allOrdersByPhone && res.allOrdersByPhone.length > 0) {
+        setPhoneOrderList(res.allOrdersByPhone);
+      } else {
+        setPhoneOrderList([]);
+      }
     } catch (err: any) {
-      setOrder(null);
-      setError(err.message || 'Không tìm thấy đơn hàng với mã này.');
+      // Nếu không tìm thấy trên server, kiểm tra thêm trong bộ nhớ trình duyệt
+      const localMatches = getLocalCachedOrders().filter(
+        (o) =>
+          (cleanCode && o.order_code.toUpperCase() === cleanCode.toUpperCase()) ||
+          (cleanPhone && o.customer_phone === cleanPhone)
+      );
+      if (localMatches.length > 0) {
+        setOrder(localMatches[0]);
+        setPhoneOrderList(localMatches.length > 1 ? localMatches : []);
+      } else {
+        setOrder(null);
+        setPhoneOrderList([]);
+        setError(err.message || 'Không tìm thấy đơn hàng với thông tin này.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (initialCode) {
-      lookupOrder(initialCode);
+    if (initialCode || initialPhone) {
+      lookupOrder(initialCode, initialPhone);
     }
-  }, [initialCode]);
+  }, [initialCode, initialPhone]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearchParams(code.trim() ? { code: code.trim().toUpperCase() } : {});
+    const params: Record<string, string> = {};
+    if (code.trim()) params.code = code.trim().toUpperCase();
+    if (phone.trim()) params.phone = phone.trim();
+    setSearchParams(params);
     lookupOrder(code, phone);
   };
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
-      <div className="text-center max-w-xl mx-auto mb-10">
+      <div className="text-center max-w-xl mx-auto mb-8">
         <p className="text-xs uppercase tracking-[0.2em] text-[#A65F3B] font-semibold mb-2">
           THEO DÕI ĐƠN HÀNG
         </p>
@@ -55,7 +79,14 @@ export default function TrackOrderPage() {
           Tra Cứu Trạng Thái Đơn Hàng
         </h1>
         <p className="text-sm text-[#777067] mt-2">
-          Nhập mã đơn hàng (ví dụ: <code className="font-mono text-[#4A2E24]">MOC-261019-1234</code>) để kiểm tra tiến độ đóng gói và vận chuyển.
+          Nhập <strong>Mã đơn hàng</strong> (VD: <code className="font-mono text-[#4A2E24]">MOC-261019-1234</code>) hoặc chỉ cần nhập <strong>Số điện thoại đặt hàng</strong> để xem tất cả đơn của bạn.
+        </p>
+        <p className="text-xs text-[#777067] mt-2">
+          Hoặc{' '}
+          <Link to="/account" className="text-[#A65F3B] font-semibold underline">
+            đăng nhập Tài khoản của bạn
+          </Link>{' '}
+          để quản lý toàn bộ lịch sử đơn hàng tự động.
         </p>
       </div>
 
@@ -66,7 +97,6 @@ export default function TrackOrderPage() {
         <div className="sm:col-span-5">
           <input
             type="text"
-            required
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Mã đơn hàng (VD: MOC-261019-xxxx)"
@@ -78,7 +108,7 @@ export default function TrackOrderPage() {
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Số điện thoại (tùy chọn)"
+            placeholder="Số điện thoại đặt hàng (09...)"
             className="w-full px-3.5 py-2.5 rounded border border-[#E6DED3] bg-[#F7F2EA]/50 text-sm focus:outline-none focus:border-[#A65F3B]"
           />
         </div>
@@ -95,8 +125,32 @@ export default function TrackOrderPage() {
       </form>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-5 text-center text-sm text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-5 text-center text-sm text-red-800 mb-6">
           {error}
+        </div>
+      )}
+
+      {phoneOrderList.length > 1 && (
+        <div className="bg-[#FFFDF9] border border-[#E6DED3] rounded-lg p-5 mb-6">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[#777067] mb-3">
+            Tìm thấy {phoneOrderList.length} đơn hàng với số điện thoại này (Chọn để xem chi tiết):
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {phoneOrderList.map((o) => (
+              <button
+                key={o.order_code}
+                type="button"
+                onClick={() => setOrder(o)}
+                className={`px-3.5 py-2 rounded border text-xs font-mono font-bold transition-colors cursor-pointer ${
+                  order?.order_code === o.order_code
+                    ? 'bg-[#4A2E24] text-[#FFFDF9] border-[#4A2E24]'
+                    : 'bg-[#F7F2EA] text-[#171512] border-[#E6DED3] hover:border-[#A65F3B]'
+                }`}
+              >
+                {o.order_code} ({formatVND(o.total)})
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

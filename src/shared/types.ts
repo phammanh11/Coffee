@@ -123,6 +123,7 @@ export interface OrderStatusHistory {
 
 export interface Order {
   id: number;
+  user_id?: number | null;
   order_code: string;
   idempotency_key?: string | null;
   customer_name: string;
@@ -204,8 +205,21 @@ export interface AdminUser {
   id: number;
   email: string;
   full_name: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'customer';
   csrf_token?: string;
+}
+
+export interface CustomerUser {
+  id: number;
+  email: string;
+  phone: string;
+  full_name: string;
+  role: 'customer' | 'admin' | 'staff';
+  province: string;
+  district: string;
+  ward: string;
+  shipping_address: string;
+  created_at?: string;
 }
 
 export interface DashboardData {

@@ -5,19 +5,25 @@
 
 PRAGMA foreign_keys = ON;
 
--- 1. Bảng người dùng / Quản trị viên (users)
+-- 1. Bảng người dùng / Quản trị viên & Khách hàng (users)
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
+  phone TEXT DEFAULT '',
   full_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'staff')),
+  role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('admin', 'staff', 'customer')),
+  province TEXT NOT NULL DEFAULT 'TP. Hồ Chí Minh',
+  district TEXT NOT NULL DEFAULT '',
+  ward TEXT NOT NULL DEFAULT '',
+  shipping_address TEXT NOT NULL DEFAULT '',
   is_active INTEGER NOT NULL DEFAULT 1,
   last_login_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 
 -- 2. Bảng phiên đăng nhập (sessions)
 CREATE TABLE IF NOT EXISTS sessions (
@@ -119,6 +125,7 @@ CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images(produ
 -- 7. Bảng đơn hàng (orders)
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
   order_code TEXT NOT NULL UNIQUE,
   idempotency_key TEXT UNIQUE,
   customer_name TEXT NOT NULL,
@@ -139,6 +146,7 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_code ON orders(order_code);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);

@@ -3,8 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ShieldCheck, Truck, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Truck, AlertCircle, ArrowLeft, UserCheck, User } from 'lucide-react';
 import { useCart } from '../features/cart/CartContext';
+import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
 import { useCreateOrder, useProducts } from '../hooks/useQueries';
 import { formatVND, VIETNAMESE_PROVINCES } from '../../shared/constants';
 import { useToast } from '../components/ToastContext';
@@ -40,6 +41,7 @@ type CheckoutFormValues = z.infer<typeof checkoutFormSchema>;
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, subtotal, clearCart, syncCartWithServerProducts } = useCart();
+  const { customer } = useCustomerAuth();
   const { showToast } = useToast();
   const createOrderMutation = useCreateOrder();
 
@@ -59,21 +61,37 @@ export default function CheckoutPage() {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutFormSchema),
     defaultValues: {
-      customer_name: '',
-      customer_phone: '',
-      customer_email: '',
-      province: 'TP. Hồ Chí Minh',
-      district: '',
-      ward: '',
-      shipping_address: '',
+      customer_name: customer?.full_name || '',
+      customer_phone: customer?.phone || '',
+      customer_email: customer?.email || '',
+      province: customer?.province || 'TP. Hồ Chí Minh',
+      district: customer?.district || '',
+      ward: customer?.ward || '',
+      shipping_address: customer?.shipping_address || '',
       notes: '',
       payment_method: 'COD',
     },
   });
+
+  useEffect(() => {
+    if (customer) {
+      reset((prev) => ({
+        ...prev,
+        customer_name: prev.customer_name || customer.full_name || '',
+        customer_phone: prev.customer_phone || customer.phone || '',
+        customer_email: prev.customer_email || customer.email || '',
+        province: customer.province || prev.province || 'TP. Hồ Chí Minh',
+        district: prev.district || customer.district || '',
+        ward: prev.ward || customer.ward || '',
+        shipping_address: prev.shipping_address || customer.shipping_address || '',
+      }));
+    }
+  }, [customer, reset]);
 
   if (items.length === 0) {
     return (
@@ -140,6 +158,35 @@ export default function CheckoutPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-12 gap-8" noValidate>
         {/* Left: Shipping Form */}
         <div className="lg:col-span-7 bg-[#FFFDF9] border border-[#E6DED3] rounded-lg p-6 sm:p-8 space-y-5">
+          {customer ? (
+            <div className="p-3.5 rounded bg-[#183B2D]/10 border border-[#183B2D]/20 text-xs text-[#183B2D] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 shrink-0" />
+                <span>
+                  Đang đặt hàng dưới tài khoản <strong>{customer.full_name}</strong> ({customer.phone || customer.email}). Đơn hàng sẽ tự động lưu vào mục <strong>Đơn hàng của tôi</strong>.
+                </span>
+              </div>
+              <Link to="/account" className="font-semibold underline shrink-0">
+                Tài khoản
+              </Link>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded bg-[#F7F2EA] border border-[#E6DED3] text-xs text-[#777067] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-[#A65F3B] shrink-0" />
+                <span>
+                  Bạn đã có tài khoản khách hàng? Đăng nhập để điền sẵn địa chỉ và theo dõi tất cả đơn hàng dễ dàng.
+                </span>
+              </div>
+              <Link
+                to="/account"
+                className="px-3 py-1 rounded bg-[#4A2E24] text-[#FFFDF9] font-semibold shrink-0"
+              >
+                Đăng nhập / Đăng ký
+              </Link>
+            </div>
+          )}
+
           <h2 className="font-serif-display text-xl font-bold text-[#171512] pb-3 border-b border-[#E6DED3]">
             1. Thông tin người nhận
           </h2>

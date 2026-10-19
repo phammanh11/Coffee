@@ -14,6 +14,7 @@ import {
   PackageSearch,
 } from 'lucide-react';
 import { useCart } from '../features/cart/CartContext';
+import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
 import { formatVND } from '../../shared/constants';
 
 const NAV_LINKS = [
@@ -34,6 +35,8 @@ export function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [quickQuery, setQuickQuery] = useState('');
+
+  const { customer } = useCustomerAuth();
 
   const {
     items,
@@ -138,12 +141,15 @@ export function MainLayout() {
             </Link>
 
             <Link
-              to="/admin"
-              className="p-2 rounded-full text-[#F7F2EA]/90 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Quản trị viên"
-              title="Trang quản trị"
+              to="/account"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[#F7F2EA]/90 hover:text-white hover:bg-white/10 transition-colors border border-white/10"
+              aria-label="Tài khoản & Đơn hàng của tôi"
+              title={customer ? `Tài khoản: ${customer.full_name}` : 'Đăng nhập / Đơn hàng của tôi'}
             >
-              <User className="w-5 h-5" />
+              <User className="w-4 h-4 text-[#E5B287]" />
+              <span className="hidden md:inline text-xs font-medium max-w-[110px] truncate">
+                {customer ? customer.full_name.split(' ').slice(-2).join(' ') : 'Tài khoản'}
+              </span>
             </Link>
 
             <button
@@ -192,18 +198,25 @@ export function MainLayout() {
             ))}
             <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
               <Link
+                to="/account"
+                className="px-3 py-2 text-sm text-[#E5B287] font-semibold flex items-center gap-2"
+              >
+                <User className="w-4 h-4" />
+                {customer ? `Tài khoản: ${customer.full_name}` : 'Tài khoản & Đơn hàng của tôi'}
+              </Link>
+              <Link
                 to="/track-order"
-                className="px-3 py-2 text-sm text-[#E5B287] flex items-center gap-2"
+                className="px-3 py-2 text-sm text-[#F7F2EA]/85 flex items-center gap-2"
               >
                 <PackageSearch className="w-4 h-4" />
                 Tra cứu đơn hàng
               </Link>
               <Link
                 to="/admin"
-                className="px-3 py-2 text-sm text-[#F7F2EA]/75 flex items-center gap-2"
+                className="px-3 py-2 text-sm text-[#F7F2EA]/65 flex items-center gap-2"
               >
                 <User className="w-4 h-4" />
-                Khu vực Quản trị
+                Khu vực Quản trị viên
               </Link>
             </div>
           </div>

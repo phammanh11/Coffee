@@ -4,14 +4,17 @@ import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { ensureDatabaseInitialized, type WorkerEnv } from './db/init';
 import { createFallbackD1, createFallbackR2 } from './db/fallback';
 import { ok, fail } from './utils/response';
-import { generateRandomHex, sha256Hex, verifyPassword } from './utils/crypto';
+import { generateRandomHex, sha256Hex, hashPassword, verifyPassword } from './utils/crypto';
 import {
   SESSION_COOKIE_NAME,
+  CUSTOMER_COOKIE_NAME,
   checkLoginRateLimit,
   recordFailedLoginAttempt,
   clearLoginAttempts,
   requireAdminAuth,
   getAuthenticatedAdmin,
+  requireCustomerAuth,
+  getAuthenticatedCustomer,
 } from './middleware/auth';
 import {
   createOrderSchema,
@@ -20,12 +23,17 @@ import {
   productFormSchema,
   categoryFormSchema,
   updateOrderStatusSchema,
+  customerRegisterSchema,
+  customerLoginSchema,
+  customerProfileSchema,
+  customerPasswordSchema,
 } from '../shared/validators';
 import { isValidOrderTransition } from '../shared/constants';
-import type { AdminUser, OrderStatus, Product, Order } from '../shared/types';
+import type { AdminUser, CustomerUser, OrderStatus, Product, Order } from '../shared/types';
 
 type AppVariables = {
   adminUser: AdminUser;
+  customerUser: CustomerUser;
 };
 
 export const app = new Hono<{ Bindings: WorkerEnv; Variables: AppVariables }>();
@@ -36,7 +44,13 @@ app.use(
   cors({
     origin: (origin) => origin || '*',
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Idempotency-Key'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-Idempotency-Key',
+      'X-Customer-Token',
+    ],
     credentials: true,
   })
 );
@@ -560,15 +574,31 @@ app.post('/api/v1/orders', async (c) => {
 
   // 7. Ghi nhận đơn hàng, chi tiết đơn hàng, lịch sử trạng thái và biến động kho
   try {
+    // Liên kết đơn hàng với tài khoản khách hàng (nếu đang đăng nhập hoặc khớp SĐT / Email)
+    const loggedInCustomer = await getAuthenticatedCustomer(c);
+    let linkedUserId: number | null = loggedInCustomer?.id ?? null;
+
+    if (!linkedUserId) {
+      const matchedUser = await c.env.DB.prepare(
+        'SELECT id FROM users WHERE phone = ? OR LOWER(email) = ?'
+      )
+        .bind(data.customer_phone, (data.customer_email || '').toLowerCase())
+        .first<{ id: number }>();
+      if (matchedUser?.id) {
+        linkedUserId = matchedUser.id;
+      }
+    }
+
     const orderInsert = await c.env.DB.prepare(
       `INSERT INTO orders (
-        order_code, idempotency_key, customer_name, customer_phone, customer_email,
+        user_id, order_code, idempotency_key, customer_name, customer_phone, customer_email,
         shipping_address, province, district, ward, notes,
         payment_method, payment_status, status,
         subtotal, shipping_fee, discount_amount, total
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'pending', ?, ?, 0, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'pending', ?, ?, 0, ?)`
     )
       .bind(
+        linkedUserId,
         orderCode,
         data.idempotency_key,
         data.customer_name,
@@ -668,13 +698,55 @@ app.post('/api/v1/orders', async (c) => {
   }
 });
 
-// 11. Tra cứu đơn hàng an toàn (GET /api/v1/orders/track?code=...&phone=...)
+// 11. Tra cứu đơn hàng theo Mã đơn hàng hoặc Số điện thoại (GET /api/v1/orders/track?code=...&phone=...)
 app.get('/api/v1/orders/track', async (c) => {
   const code = (c.req.query('code') || '').trim().toUpperCase();
   const phone = (c.req.query('phone') || '').trim();
 
-  if (!code) {
-    return fail(c, 'MISSING_ORDER_CODE', 'Vui lòng nhập mã đơn hàng (ví dụ: MOC-261019-1234).', 400);
+  if (!code && !phone) {
+    return fail(
+      c,
+      'MISSING_QUERY',
+      'Vui lòng nhập Mã đơn hàng (VD: MOC-261019-1234) hoặc Số điện thoại đặt hàng.',
+      400
+    );
+  }
+
+  // Nếu người dùng chỉ nhập Số điện thoại (không nhập mã đơn), trả về đơn mới nhất kèm danh sách đơn của SĐT đó
+  if (!code && phone) {
+    const { results: phoneOrders } = await c.env.DB.prepare(
+      'SELECT * FROM orders WHERE customer_phone = ? ORDER BY created_at DESC, id DESC LIMIT 20'
+    )
+      .bind(phone)
+      .all<Order>();
+
+    if (!phoneOrders.length) {
+      return fail(
+        c,
+        'ORDER_NOT_FOUND',
+        `Không tìm thấy đơn hàng nào được đặt với số điện thoại ${phone}.`,
+        404
+      );
+    }
+
+    const enrichedOrders = await Promise.all(
+      phoneOrders.map(async (ord) => {
+        const [{ results: items }, { results: history }] = await Promise.all([
+          c.env.DB.prepare('SELECT * FROM order_items WHERE order_id = ?').bind(ord.id).all(),
+          c.env.DB.prepare(
+            'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY created_at DESC, id DESC'
+          )
+            .bind(ord.id)
+            .all(),
+        ]);
+        return { ...ord, items, history };
+      })
+    );
+
+    return ok(c, {
+      ...enrichedOrders[0],
+      allOrdersByPhone: enrichedOrders,
+    });
   }
 
   const order = await c.env.DB.prepare('SELECT * FROM orders WHERE UPPER(order_code) = ?')
@@ -685,7 +757,7 @@ app.get('/api/v1/orders/track', async (c) => {
     return fail(
       c,
       'ORDER_NOT_FOUND',
-      'Không tìm thấy đơn hàng với mã này. Vui lòng kiểm tra lại mã đơn hàng.',
+      'Không tìm thấy đơn hàng với mã này. Bạn cũng có thể nhập Số điện thoại đặt hàng để tìm tất cả đơn.',
       404
     );
   }
@@ -709,7 +781,6 @@ app.get('/api/v1/orders/track', async (c) => {
       .all(),
   ]);
 
-  // Ẩn bớt số điện thoại và địa chỉ chi tiết nếu tra cứu công khai không kèm SĐT đầy đủ
   const maskedPhone =
     phone === order.customer_phone
       ? order.customer_phone
@@ -721,6 +792,590 @@ app.get('/api/v1/orders/track', async (c) => {
     items,
     history,
   });
+});
+
+// Đồng bộ đơn hàng dự phòng giữa trình duyệt khách hàng và Worker (POST /api/v1/orders/sync)
+app.post('/api/v1/orders/sync', async (c) => {
+  const body = await c.req.json().catch(() => ({ orders: [] }));
+  const incomingOrders = Array.isArray(body?.orders) ? (body.orders as Order[]) : [];
+  let syncedCount = 0;
+
+  for (const ord of incomingOrders.slice(0, 20)) {
+    if (!ord?.order_code || !ord?.customer_phone) continue;
+    const code = String(ord.order_code).trim().toUpperCase();
+    const existing = await c.env.DB.prepare('SELECT * FROM orders WHERE UPPER(order_code) = ?')
+      .bind(code)
+      .first<{ id: number }>();
+
+    if (!existing) {
+      const ins = await c.env.DB.prepare(
+        `INSERT INTO orders (
+          user_id, order_code, idempotency_key, customer_name, customer_phone, customer_email,
+          shipping_address, province, district, ward, notes,
+          payment_method, payment_status, status,
+          subtotal, shipping_fee, discount_amount, total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'pending', ?, ?, 0, ?)`
+      )
+        .bind(
+          ord.user_id ?? null,
+          code,
+          ord.idempotency_key || `sync-${code}`,
+          ord.customer_name || 'Khách hàng',
+          ord.customer_phone,
+          ord.customer_email || null,
+          ord.shipping_address || '',
+          ord.province || 'TP. Hồ Chí Minh',
+          ord.district || '',
+          ord.ward || '',
+          ord.notes || null,
+          ord.payment_method || 'COD',
+          Number(ord.subtotal) || 0,
+          Number(ord.shipping_fee) || 0,
+          Number(ord.total) || 0
+        )
+        .run();
+
+      const newOrderId = Number(ins.meta.last_row_id);
+      if (Array.isArray(ord.items)) {
+        for (const item of ord.items) {
+          await c.env.DB.prepare(
+            `INSERT INTO order_items (
+              order_id, product_id, product_name_snapshot, sku_snapshot,
+              variant_name_snapshot, grind_type, unit_price, quantity, line_total, image_url_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+            .bind(
+              newOrderId,
+              item.product_id || 1,
+              item.product_name_snapshot || 'Cà phê MỘC',
+              item.sku_snapshot || 'MOC-250',
+              item.variant_name_snapshot || 'Gói 250g',
+              item.grind_type || 'Nguyên hạt',
+              Number(item.unit_price) || 0,
+              Number(item.quantity) || 1,
+              Number(item.line_total) || 0,
+              item.image_url_snapshot || '/images/product-house-blend.png'
+            )
+            .run();
+        }
+      }
+      await c.env.DB.prepare(
+        `INSERT INTO order_status_history (order_id, previous_status, new_status, note, changed_by)
+         VALUES (?, NULL, ?, 'Đồng bộ đơn hàng của khách hàng', 'customer')`
+      )
+        .bind(newOrderId, ord.status || 'pending')
+        .run();
+      syncedCount++;
+    }
+  }
+
+  return ok(c, { syncedCount });
+});
+
+// ============================================================================
+// CUSTOMER ACCOUNT APIs (/api/v1/auth/* & /api/v1/account/*)
+// ============================================================================
+
+// Đăng ký tài khoản khách hàng (POST /api/v1/auth/register)
+app.post('/api/v1/auth/register', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return fail(c, 'INVALID_JSON', 'Dữ liệu gửi lên không hợp lệ.', 400);
+  }
+
+  const parsed = customerRegisterSchema.safeParse(body);
+  if (!parsed.success) {
+    const firstMsg =
+      parsed.error.issues[0]?.message || 'Thông tin đăng ký chưa hợp lệ. Vui lòng kiểm tra lại.';
+    return fail(c, 'VALIDATION_ERROR', firstMsg, 400);
+  }
+
+  const d = parsed.data;
+  const emailLower = d.email.toLowerCase();
+  const phoneClean = d.phone.trim();
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id, email, phone FROM users WHERE LOWER(email) = ? OR phone = ?'
+  )
+    .bind(emailLower, phoneClean)
+    .first<{ id: number; email: string; phone: string }>();
+
+  if (existing) {
+    const isEmailDup = existing.email?.toLowerCase() === emailLower;
+    return fail(
+      c,
+      'DUPLICATE_ACCOUNT',
+      isEmailDup
+        ? 'Địa chỉ email này đã được đăng ký. Vui lòng đăng nhập.'
+        : 'Số điện thoại này đã được đăng ký tài khoản. Vui lòng đăng nhập.',
+      409
+    );
+  }
+
+  const { hash, salt } = await hashPassword(d.password);
+  const insertRes = await c.env.DB.prepare(
+    `INSERT INTO users (
+      email, phone, full_name, password_hash, password_salt, role,
+      province, district, ward, shipping_address, is_active
+    ) VALUES (?, ?, ?, ?, ?, 'customer', ?, ?, ?, ?, 1)`
+  )
+    .bind(
+      emailLower,
+      phoneClean,
+      d.full_name,
+      hash,
+      salt,
+      d.province || 'TP. Hồ Chí Minh',
+      d.district || '',
+      d.ward || '',
+      d.shipping_address || ''
+    )
+    .run();
+
+  const userId = Number(insertRes.meta.last_row_id);
+
+  // Tự động liên kết tất cả đơn hàng đã đặt trước đó có cùng Số điện thoại hoặc Email vào tài khoản mới
+  await c.env.DB.prepare(
+    `UPDATE orders SET user_id = ?
+     WHERE user_id IS NULL AND (customer_phone = ? OR LOWER(customer_email) = ?)`
+  )
+    .bind(userId, phoneClean, emailLower)
+    .run();
+
+  const rawToken = generateRandomHex(32);
+  const tokenHash = await sha256Hex(rawToken);
+  const csrfToken = generateRandomHex(16);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .slice(0, 19);
+  const clientIp =
+    c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || '127.0.0.1';
+
+  await c.env.DB.prepare(
+    `INSERT INTO sessions (token_hash, user_id, csrf_token, ip_address, user_agent, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      tokenHash,
+      userId,
+      csrfToken,
+      clientIp,
+      (c.req.header('User-Agent') || '').slice(0, 200),
+      expiresAt
+    )
+    .run();
+
+  const isProd = c.env.ENVIRONMENT === 'production';
+  setCookie(c, CUSTOMER_COOKIE_NAME, rawToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60,
+  });
+
+  const user: CustomerUser = {
+    id: userId,
+    email: emailLower,
+    phone: phoneClean,
+    full_name: d.full_name,
+    role: 'customer',
+    province: d.province || 'TP. Hồ Chí Minh',
+    district: d.district || '',
+    ward: d.ward || '',
+    shipping_address: d.shipping_address || '',
+  };
+
+  return ok(
+    c,
+    { user, token: rawToken },
+    'Đăng ký tài khoản thành công! Các đơn hàng trùng số điện thoại của bạn đã được đồng bộ.',
+    201
+  );
+});
+
+// Đăng nhập tài khoản khách hàng bằng Email hoặc Số điện thoại (POST /api/v1/auth/login)
+app.post('/api/v1/auth/login', async (c) => {
+  const clientIp =
+    c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || '127.0.0.1';
+
+  const rateCheck = checkLoginRateLimit(clientIp);
+  if (!rateCheck.allowed) {
+    return fail(
+      c,
+      'TOO_MANY_REQUESTS',
+      `Bạn đã thử đăng nhập quá nhiều lần. Vui lòng thử lại sau ${rateCheck.retryAfterSec} giây.`,
+      429
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return fail(c, 'INVALID_JSON', 'Dữ liệu đăng nhập không hợp lệ.', 400);
+  }
+
+  const parsed = customerLoginSchema.safeParse(body);
+  if (!parsed.success) {
+    return fail(
+      c,
+      'VALIDATION_ERROR',
+      parsed.error.issues[0]?.message || 'Vui lòng nhập Email/Số điện thoại và mật khẩu.',
+      400
+    );
+  }
+
+  const identifier = parsed.data.identifier.trim();
+  const userRow = await c.env.DB.prepare(
+    'SELECT * FROM users WHERE (LOWER(email) = ? OR phone = ?) AND is_active = 1'
+  )
+    .bind(identifier.toLowerCase(), identifier)
+    .first<{
+      id: number;
+      email: string;
+      phone: string;
+      full_name: string;
+      password_hash: string;
+      password_salt: string;
+      role: 'customer' | 'admin' | 'staff';
+      province: string;
+      district: string;
+      ward: string;
+      shipping_address: string;
+      created_at: string;
+    }>();
+
+  if (!userRow) {
+    recordFailedLoginAttempt(clientIp);
+    return fail(c, 'INVALID_CREDENTIALS', 'Email/Số điện thoại hoặc mật khẩu không chính xác.', 401);
+  }
+
+  const isValidPassword = await verifyPassword(
+    parsed.data.password,
+    userRow.password_hash,
+    userRow.password_salt
+  );
+
+  if (!isValidPassword) {
+    recordFailedLoginAttempt(clientIp);
+    return fail(c, 'INVALID_CREDENTIALS', 'Email/Số điện thoại hoặc mật khẩu không chính xác.', 401);
+  }
+
+  clearLoginAttempts(clientIp);
+
+  // Tự động đồng bộ các đơn hàng có cùng SĐT hoặc Email vào tài khoản
+  await c.env.DB.prepare(
+    `UPDATE orders SET user_id = ?
+     WHERE user_id IS NULL AND (customer_phone = ? OR LOWER(customer_email) = ?)`
+  )
+    .bind(userRow.id, userRow.phone || '', userRow.email.toLowerCase())
+    .run();
+
+  const rawToken = generateRandomHex(32);
+  const tokenHash = await sha256Hex(rawToken);
+  const csrfToken = generateRandomHex(16);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .slice(0, 19);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO sessions (token_hash, user_id, csrf_token, ip_address, user_agent, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(
+      tokenHash,
+      userRow.id,
+      csrfToken,
+      clientIp,
+      (c.req.header('User-Agent') || '').slice(0, 200),
+      expiresAt
+    ),
+    c.env.DB.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").bind(
+      userRow.id
+    ),
+  ]);
+
+  const isProd = c.env.ENVIRONMENT === 'production';
+  setCookie(c, CUSTOMER_COOKIE_NAME, rawToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60,
+  });
+
+  const user: CustomerUser = {
+    id: userRow.id,
+    email: userRow.email,
+    phone: userRow.phone || '',
+    full_name: userRow.full_name,
+    role: userRow.role,
+    province: userRow.province || 'TP. Hồ Chí Minh',
+    district: userRow.district || '',
+    ward: userRow.ward || '',
+    shipping_address: userRow.shipping_address || '',
+    created_at: userRow.created_at,
+  };
+
+  return ok(c, { user, token: rawToken }, 'Đăng nhập thành công!');
+});
+
+// Đăng xuất tài khoản khách hàng (POST /api/v1/auth/logout)
+app.post('/api/v1/auth/logout', async (c) => {
+  const tokenHeader = c.req.header('X-Customer-Token')?.trim();
+  const cookieToken = getCookie(c, CUSTOMER_COOKIE_NAME);
+  const rawToken = tokenHeader || cookieToken;
+  if (rawToken) {
+    const tokenHash = await sha256Hex(rawToken);
+    await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
+  }
+  deleteCookie(c, CUSTOMER_COOKIE_NAME, { path: '/' });
+  return ok(c, { loggedOut: true }, 'Đã đăng xuất tài khoản.');
+});
+
+// Lấy thông tin tài khoản khách hàng hiện tại (GET /api/v1/auth/me)
+app.get('/api/v1/auth/me', async (c) => {
+  const customer = await getAuthenticatedCustomer(c);
+  if (!customer) {
+    return fail(c, 'UNAUTHORIZED', 'Chưa đăng nhập tài khoản.', 401);
+  }
+  return ok(c, { user: customer });
+});
+
+// Các API yêu cầu đăng nhập tài khoản khách hàng (/api/v1/account/*)
+app.use('/api/v1/account/*', requireCustomerAuth);
+
+// Cập nhật hồ sơ và địa chỉ giao hàng mặc định (PUT /api/v1/account/profile)
+app.put('/api/v1/account/profile', async (c) => {
+  const customer = c.get('customerUser');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = customerProfileSchema.safeParse(body);
+  if (!parsed.success) {
+    return fail(
+      c,
+      'VALIDATION_ERROR',
+      parsed.error.issues[0]?.message || 'Thông tin hồ sơ không hợp lệ.',
+      400
+    );
+  }
+
+  const d = parsed.data;
+  const dupPhone = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE (LOWER(email) = ? OR phone = ?) AND id != ?'
+  )
+    .bind('__none__', d.phone, customer.id)
+    .first<{ id: number }>();
+
+  if (dupPhone && dupPhone.id !== customer.id) {
+    return fail(c, 'DUPLICATE_PHONE', 'Số điện thoại này đã được liên kết với tài khoản khác.', 409);
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE users SET
+      full_name = ?, phone = ?, province = ?, district = ?, ward = ?, shipping_address = ?,
+      updated_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(
+      d.full_name,
+      d.phone,
+      d.province,
+      d.district,
+      d.ward,
+      d.shipping_address,
+      customer.id
+    )
+    .run();
+
+  // Đồng bộ đơn hàng theo số điện thoại vừa cập nhật
+  await c.env.DB.prepare(
+    `UPDATE orders SET user_id = ?
+     WHERE user_id IS NULL AND (customer_phone = ? OR LOWER(customer_email) = ?)`
+  )
+    .bind(customer.id, d.phone, customer.email.toLowerCase())
+    .run();
+
+  const updated: CustomerUser = {
+    ...customer,
+    full_name: d.full_name,
+    phone: d.phone,
+    province: d.province,
+    district: d.district,
+    ward: d.ward,
+    shipping_address: d.shipping_address,
+  };
+
+  return ok(c, { user: updated }, 'Đã cập nhật thông tin tài khoản và địa chỉ nhận hàng.');
+});
+
+// Đổi mật khẩu khách hàng (PUT /api/v1/account/password)
+app.put('/api/v1/account/password', async (c) => {
+  const customer = c.get('customerUser');
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = customerPasswordSchema.safeParse(body);
+  if (!parsed.success) {
+    return fail(
+      c,
+      'VALIDATION_ERROR',
+      parsed.error.issues[0]?.message || 'Dữ liệu mật khẩu không hợp lệ.',
+      400
+    );
+  }
+
+  const userRow = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
+    .bind(customer.id)
+    .first<{ password_hash: string; password_salt: string }>();
+
+  if (!userRow) {
+    return fail(c, 'NOT_FOUND', 'Không tìm thấy tài khoản.', 404);
+  }
+
+  const validCurrent = await verifyPassword(
+    parsed.data.current_password,
+    userRow.password_hash,
+    userRow.password_salt
+  );
+  if (!validCurrent) {
+    return fail(c, 'INVALID_PASSWORD', 'Mật khẩu hiện tại không chính xác.', 400);
+  }
+
+  const { hash, salt } = await hashPassword(parsed.data.new_password);
+  await c.env.DB.prepare(
+    "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = datetime('now') WHERE id = ?"
+  )
+    .bind(hash, salt, customer.id)
+    .run();
+
+  return ok(c, { updated: true }, 'Đã đổi mật khẩu thành công.');
+});
+
+// Lấy toàn bộ danh sách đơn hàng của khách hàng (GET /api/v1/account/orders)
+app.get('/api/v1/account/orders', async (c) => {
+  const customer = c.get('customerUser');
+
+  // Đảm bảo mọi đơn hàng trùng SĐT hoặc Email đều được gắn user_id
+  await c.env.DB.prepare(
+    `UPDATE orders SET user_id = ?
+     WHERE user_id IS NULL AND (customer_phone = ? OR LOWER(customer_email) = ?)`
+  )
+    .bind(customer.id, customer.phone || '', customer.email.toLowerCase())
+    .run();
+
+  const { results: orders } = await c.env.DB.prepare(
+    `SELECT * FROM orders
+     WHERE user_id = ? OR customer_phone = ? OR LOWER(customer_email) = ?
+     ORDER BY created_at DESC, id DESC`
+  )
+    .bind(customer.id, customer.phone || '__no_phone__', customer.email.toLowerCase())
+    .all<Order>();
+
+  const enrichedOrders = await Promise.all(
+    orders.map(async (ord) => {
+      const [{ results: items }, { results: history }] = await Promise.all([
+        c.env.DB.prepare('SELECT * FROM order_items WHERE order_id = ?').bind(ord.id).all(),
+        c.env.DB.prepare(
+          'SELECT * FROM order_status_history WHERE order_id = ? ORDER BY created_at DESC, id DESC'
+        )
+          .bind(ord.id)
+          .all(),
+      ]);
+      return { ...ord, items, history };
+    })
+  );
+
+  return ok(c, enrichedOrders);
+});
+
+// Khách hàng tự hủy đơn hàng khi đơn còn ở trạng thái 'pending' (POST /api/v1/account/orders/:id/cancel)
+app.post('/api/v1/account/orders/:id/cancel', async (c) => {
+  const customer = c.get('customerUser');
+  const orderId = Number(c.req.param('id'));
+  const body = await c.req.json().catch(() => ({}));
+  const reason = (body.reason || 'Khách hàng chủ động hủy đơn hàng').trim().slice(0, 200);
+
+  const order = await c.env.DB.prepare('SELECT * FROM orders WHERE id = ?')
+    .bind(orderId)
+    .first<Order>();
+
+  if (!order) {
+    return fail(c, 'NOT_FOUND', 'Không tìm thấy đơn hàng.', 404);
+  }
+
+  const isOwner =
+    order.user_id === customer.id ||
+    (customer.phone && order.customer_phone === customer.phone) ||
+    (order.customer_email &&
+      order.customer_email.toLowerCase() === customer.email.toLowerCase());
+
+  if (!isOwner) {
+    return fail(c, 'FORBIDDEN', 'Bạn không có quyền thao tác trên đơn hàng này.', 403);
+  }
+
+  if (order.status !== 'pending') {
+    return fail(
+      c,
+      'CANNOT_CANCEL',
+      'Chỉ có thể hủy đơn hàng khi đang ở trạng thái "Chờ xác nhận". Vui lòng liên hệ Hotline 1900 6868 để được hỗ trợ.',
+      400
+    );
+  }
+
+  const { results: orderItems } = await c.env.DB.prepare(
+    'SELECT * FROM order_items WHERE order_id = ?'
+  )
+    .bind(orderId)
+    .all<{ product_id: number; quantity: number }>();
+
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE orders
+       SET status = 'cancelled', payment_status = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    ).bind(order.payment_status, orderId),
+    c.env.DB.prepare(
+      `INSERT INTO order_status_history (order_id, previous_status, new_status, note, changed_by)
+       VALUES (?, 'pending', 'cancelled', ?, ?)`
+    ).bind(orderId, reason, customer.email),
+  ];
+
+  for (const item of orderItems) {
+    const prod = await c.env.DB.prepare('SELECT stock FROM products WHERE id = ?')
+      .bind(item.product_id)
+      .first<{ stock: number }>();
+    const prevStock = prod?.stock ?? 0;
+
+    statements.push(
+      c.env.DB.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').bind(
+        item.quantity,
+        item.product_id
+      ),
+      c.env.DB.prepare(
+        `INSERT INTO inventory_movements (
+          product_id, order_id, change_amount, previous_stock, new_stock, reason, note, created_by
+        ) VALUES (?, ?, ?, ?, ?, 'order_cancelled', ?, ?)`
+      ).bind(
+        item.product_id,
+        orderId,
+        item.quantity,
+        prevStock,
+        prevStock + item.quantity,
+        `Khách hàng hủy đơn ${order.order_code}`,
+        customer.email
+      )
+    );
+  }
+
+  await c.env.DB.batch(statements);
+
+  const updated = await c.env.DB.prepare('SELECT * FROM orders WHERE id = ?')
+    .bind(orderId)
+    .first<Order>();
+  return ok(c, updated, 'Đã hủy đơn hàng thành công.');
 });
 
 // 12. Đăng ký nhận bản tin Newsletter (POST /api/v1/newsletter/subscribe)
@@ -843,12 +1498,12 @@ app.post('/api/v1/admin/auth/login', async (c) => {
       full_name: string;
       password_hash: string;
       password_salt: string;
-      role: 'admin' | 'staff';
+      role: 'admin' | 'staff' | 'customer';
     }>();
 
-  if (!userRow) {
+  if (!userRow || (userRow.role !== 'admin' && userRow.role !== 'staff')) {
     recordFailedLoginAttempt(clientIp);
-    return fail(c, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác.', 401);
+    return fail(c, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu quản trị không chính xác.', 401);
   }
 
   const isValidPassword = await verifyPassword(
@@ -859,7 +1514,7 @@ app.post('/api/v1/admin/auth/login', async (c) => {
 
   if (!isValidPassword) {
     recordFailedLoginAttempt(clientIp);
-    return fail(c, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác.', 401);
+    return fail(c, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu quản trị không chính xác.', 401);
   }
 
   clearLoginAttempts(clientIp);
@@ -903,6 +1558,7 @@ app.post('/api/v1/admin/auth/login', async (c) => {
   return ok(
     c,
     {
+      token: rawSessionToken,
       user: {
         id: userRow.id,
         email: userRow.email,

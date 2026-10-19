@@ -85,11 +85,18 @@ export default function OrderSuccessPage() {
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
-            to={`/track-order${orderCode ? `?code=${encodeURIComponent(orderCode)}` : ''}`}
+            to="/account"
             className="inline-flex items-center gap-2 px-5 py-3 rounded bg-[#4A2E24] hover:bg-[#3A231B] text-[#FFFDF9] text-sm font-semibold"
           >
             <PackageSearch className="w-4 h-4" />
-            Tra cứu tiến độ đơn hàng
+            Quản lý Đơn hàng của tôi
+          </Link>
+
+          <Link
+            to={`/track-order${orderCode ? `?code=${encodeURIComponent(orderCode)}` : ''}`}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded border border-[#4A2E24] text-[#4A2E24] hover:bg-[#4A2E24]/5 text-sm font-semibold"
+          >
+            Tra cứu mã đơn
           </Link>
 
           <Link

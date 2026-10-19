@@ -22,10 +22,15 @@ export async function ensureDatabaseInitialized(env: WorkerEnv): Promise<void> {
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           email TEXT NOT NULL UNIQUE,
+          phone TEXT DEFAULT '',
           full_name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
           password_salt TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'admin',
+          role TEXT NOT NULL DEFAULT 'customer',
+          province TEXT NOT NULL DEFAULT 'TP. Hồ Chí Minh',
+          district TEXT NOT NULL DEFAULT '',
+          ward TEXT NOT NULL DEFAULT '',
+          shipping_address TEXT NOT NULL DEFAULT '',
           is_active INTEGER NOT NULL DEFAULT 1,
           last_login_at TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -117,6 +122,7 @@ export async function ensureDatabaseInitialized(env: WorkerEnv): Promise<void> {
       env.DB.prepare(`
         CREATE TABLE IF NOT EXISTS orders (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
           order_code TEXT NOT NULL UNIQUE,
           idempotency_key TEXT UNIQUE,
           customer_name TEXT NOT NULL,
@@ -251,22 +257,41 @@ export async function ensureDatabaseInitialized(env: WorkerEnv): Promise<void> {
       `),
     ]);
 
-    // Bootstrap Admin Account safely if no admin exists yet
-    const adminCount = await env.DB.prepare('SELECT COUNT(*) as count FROM users').first<{ count: number }>();
-    if (!adminCount || adminCount.count === 0) {
-      const isDev = (env.ENVIRONMENT || 'development') !== 'production';
-      const bootstrapEmail = env.ADMIN_BOOTSTRAP_EMAIL || (isDev ? 'admin@moccoffee.vn' : '');
-      const bootstrapPass = env.ADMIN_BOOTSTRAP_PASSWORD || (isDev ? 'MocCoffee@2026' : '');
+    // Tự động nâng cấp bảng nếu cơ sở dữ liệu D1 được tạo từ phiên bản trước
+    const migrationStatements = [
+      "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN province TEXT NOT NULL DEFAULT 'TP. Hồ Chí Minh'",
+      "ALTER TABLE users ADD COLUMN district TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN ward TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN shipping_address TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE orders ADD COLUMN user_id INTEGER',
+    ];
+    for (const stmt of migrationStatements) {
+      await env.DB.prepare(stmt)
+        .run()
+        .catch(() => {});
+    }
 
-      if (bootstrapEmail && bootstrapPass) {
-        const { hash, salt } = await hashPassword(bootstrapPass);
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO users (email, full_name, password_hash, password_salt, role, is_active)
-           VALUES (?, 'Quản trị viên MỘC Coffee', ?, ?, 'admin', 1)`
-        )
-          .bind(bootstrapEmail.toLowerCase(), hash, salt)
-          .run();
-      }
+    // Bootstrap Admin & Demo Customer Account safely
+    const adminCount = await env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").first<{ count: number }>();
+    if (!adminCount || adminCount.count === 0) {
+      const bootstrapEmail = env.ADMIN_BOOTSTRAP_EMAIL || 'admin@moccoffee.vn';
+      const bootstrapPass = env.ADMIN_BOOTSTRAP_PASSWORD || 'MocCoffee@2026';
+
+      const { hash, salt } = await hashPassword(bootstrapPass);
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO users (email, phone, full_name, password_hash, password_salt, role, province, district, ward, shipping_address, is_active)
+         VALUES (?, '0909888999', 'Quản trị viên MỘC Coffee', ?, ?, 'admin', 'TP. Hồ Chí Minh', 'Quận 1', 'Phường Bến Nghé', 'Số 86 Nguyễn Huệ', 1)`
+      )
+        .bind(bootstrapEmail.toLowerCase(), hash, salt)
+        .run();
+
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO users (email, phone, full_name, password_hash, password_salt, role, province, district, ward, shipping_address, is_active)
+         VALUES ('khachhang@moccoffee.vn', '0901234567', 'Nguyễn Minh Anh', ?, ?, 'customer', 'TP. Hồ Chí Minh', 'Quận 3', 'Phường Võ Thị Sáu', 'Số 128 Điện Biên Phủ', 1)`
+      )
+        .bind(hash, salt)
+        .run();
     }
 
     // Seed initial catalog only in non-production or when catalog is completely empty

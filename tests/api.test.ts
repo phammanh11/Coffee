@@ -479,4 +479,102 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     expect(json.data.summary.totalOrders).toBe(1);
     expect(json.data.recentOrders[0].order_code).toBe(createdOrderCode);
   });
+
+  it('17. Khách hàng đăng ký tài khoản, tự động đồng bộ đơn hàng cũ theo SĐT và quản lý đơn hàng cá nhân', async () => {
+    // Đăng ký tài khoản mới có số điện thoại 0988776655
+    // Trước tiên đặt 1 đơn hàng vãng lai bằng SĐT 0988776655
+    const guestOrderRes = await app.request(
+      '/api/v1/orders',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idempotency_key: 'idem-key-customer-sync-001',
+          customer_name: 'Phạm Hoàng Nam',
+          customer_phone: '0988776655',
+          customer_email: 'nam.pham@example.com',
+          shipping_address: '88 Lý Tự Trọng',
+          province: 'TP. Hồ Chí Minh',
+          district: 'Quận 1',
+          ward: 'Phường Bến Thành',
+          payment_method: 'COD',
+          items: [{ product_id: 2, grind_type: 'Nguyên hạt', quantity: 1 }],
+        }),
+      },
+      env
+    );
+    expect(guestOrderRes.status).toBe(201);
+    const guestOrderJson = (await guestOrderRes.json()) as any;
+    const guestOrderId = guestOrderJson.data.id;
+
+    // Khách hàng đăng ký tài khoản với cùng SĐT 0988776655
+    const regRes = await app.request(
+      '/api/v1/auth/register',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: 'Phạm Hoàng Nam',
+          phone: '0988776655',
+          email: 'nam.pham@example.com',
+          password: 'Password123',
+          province: 'TP. Hồ Chí Minh',
+          district: 'Quận 1',
+          ward: 'Phường Bến Thành',
+          shipping_address: '88 Lý Tự Trọng',
+        }),
+      },
+      env
+    );
+
+    expect(regRes.status).toBe(201);
+    const regJson = (await regRes.json()) as any;
+    expect(regJson.success).toBe(true);
+    expect(regJson.data.user.phone).toBe('0988776655');
+    const customerToken = regJson.data.token;
+
+    // Kiểm tra danh sách đơn hàng của tài khoản -> Đơn đặt trước khi đăng ký phải tự động hiển thị!
+    const myOrdersRes = await app.request(
+      '/api/v1/account/orders',
+      {
+        method: 'GET',
+        headers: { 'X-Customer-Token': customerToken },
+      },
+      env
+    );
+    expect(myOrdersRes.status).toBe(200);
+    const myOrdersJson = (await myOrdersRes.json()) as any;
+    expect(myOrdersJson.success).toBe(true);
+    expect(myOrdersJson.data.length).toBe(1);
+    expect(myOrdersJson.data[0].id).toBe(guestOrderId);
+    expect(myOrdersJson.data[0].items.length).toBe(1);
+
+    // Tra cứu đơn hàng bằng số điện thoại không cần mã đơn
+    const trackByPhoneRes = await app.request(
+      '/api/v1/orders/track?phone=0988776655',
+      { method: 'GET' },
+      env
+    );
+    expect(trackByPhoneRes.status).toBe(200);
+    const trackByPhoneJson = (await trackByPhoneRes.json()) as any;
+    expect(trackByPhoneJson.data.allOrdersByPhone.length).toBe(1);
+
+    // Khách hàng tự hủy đơn hàng khi đang ở trạng thái pending -> hoàn lại kho
+    const cancelRes = await app.request(
+      `/api/v1/account/orders/${guestOrderId}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Customer-Token': customerToken,
+        },
+        body: JSON.stringify({ reason: 'Đổi ý muốn chọn loại hạt khác' }),
+      },
+      env
+    );
+    expect(cancelRes.status).toBe(200);
+    const cancelJson = (await cancelRes.json()) as any;
+    expect(cancelJson.data.status).toBe('cancelled');
+  });
 });
+

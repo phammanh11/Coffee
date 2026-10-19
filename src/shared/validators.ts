@@ -104,3 +104,57 @@ export const updateOrderStatusSchema = z.object({
   payment_status: z.enum(['unpaid', 'paid', 'refunded']).optional(),
   note: z.string().trim().max(300).optional(),
 });
+
+export const customerRegisterSchema = z.object({
+  full_name: z
+    .string()
+    .trim()
+    .min(2, 'Vui lòng nhập họ và tên (tối thiểu 2 ký tự)')
+    .max(100, 'Họ tên không vượt quá 100 ký tự'),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^(0|\+84)[0-9]{8,10}$/, 'Số điện thoại không hợp lệ (ví dụ: 0901234567)'),
+  email: z.string().trim().email('Địa chỉ email không hợp lệ'),
+  password: z.string().min(6, 'Mật khẩu phải có ít nhất 6 ký tự').max(100),
+  province: z.string().trim().optional().default('TP. Hồ Chí Minh'),
+  district: z.string().trim().optional().default(''),
+  ward: z.string().trim().optional().default(''),
+  shipping_address: z.string().trim().optional().default(''),
+});
+
+export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+
+export const customerLoginSchema = z.object({
+  identifier: z
+    .string()
+    .trim()
+    .min(3, 'Vui lòng nhập Email hoặc Số điện thoại đã đăng ký'),
+  password: z.string().min(6, 'Mật khẩu phải có ít nhất 6 ký tự'),
+});
+
+export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
+
+export const customerProfileSchema = z.object({
+  full_name: z
+    .string()
+    .trim()
+    .min(2, 'Vui lòng nhập họ và tên (tối thiểu 2 ký tự)')
+    .max(100),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^(0|\+84)[0-9]{8,10}$/, 'Số điện thoại không hợp lệ (ví dụ: 0901234567)'),
+  province: z.string().trim().default('TP. Hồ Chí Minh'),
+  district: z.string().trim().default(''),
+  ward: z.string().trim().default(''),
+  shipping_address: z.string().trim().default(''),
+});
+
+export type CustomerProfileInput = z.infer<typeof customerProfileSchema>;
+
+export const customerPasswordSchema = z.object({
+  current_password: z.string().min(6, 'Vui lòng nhập mật khẩu hiện tại'),
+  new_password: z.string().min(6, 'Mật khẩu mới phải có ít nhất 6 ký tự').max(100),
+});
+

@@ -7,11 +7,86 @@ import type {
   Review,
   BlogPost,
   AdminUser,
+  CustomerUser,
   DashboardData,
   Banner,
   SiteContent,
 } from '../../shared/types';
-import type { CreateOrderInput, ProductFormInput } from '../../shared/validators';
+import type {
+  CreateOrderInput,
+  ProductFormInput,
+  CustomerRegisterInput,
+  CustomerLoginInput,
+  CustomerProfileInput,
+} from '../../shared/validators';
+
+export const CUSTOMER_TOKEN_STORAGE_KEY = 'moc_customer_token';
+export const ADMIN_TOKEN_STORAGE_KEY = 'moc_admin_token';
+export const LOCAL_ORDERS_STORAGE_KEY = 'moc_local_orders_v1';
+
+export function getSavedCustomerToken(): string | null {
+  try {
+    return localStorage.getItem(CUSTOMER_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSavedCustomerToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(CUSTOMER_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(CUSTOMER_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getSavedAdminToken(): string | null {
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSavedAdminToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getLocalCachedOrders(): Order[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_ORDERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveOrderToLocalCache(order: Order): void {
+  try {
+    const list = getLocalCachedOrders();
+    const filtered = list.filter(
+      (o) => String(o.order_code).toUpperCase() !== String(order.order_code).toUpperCase()
+    );
+    filtered.unshift(order);
+    localStorage.setItem(LOCAL_ORDERS_STORAGE_KEY, JSON.stringify(filtered.slice(0, 30)));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export class ApiError extends Error {
   code: string;
@@ -32,6 +107,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  const customerToken = getSavedCustomerToken();
+  if (customerToken && !headers.has('X-Customer-Token')) {
+    headers.set('X-Customer-Token', customerToken);
+  }
+  if (path.startsWith('/api/v1/admin/')) {
+    const adminToken = getSavedAdminToken();
+    if (adminToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${adminToken}`);
+    }
+  }
 
   const res = await fetch(path, {
     ...options,
@@ -51,6 +136,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return json.data as T;
+}
+
+async function syncLocalOrdersWithServer(): Promise<void> {
+  const localOrders = getLocalCachedOrders();
+  if (!localOrders.length) return;
+  try {
+    await request('/api/v1/orders/sync', {
+      method: 'POST',
+      body: JSON.stringify({ orders: localOrders }),
+    });
+  } catch {
+    // ignore sync errors
+  }
 }
 
 export interface HomePageData {
@@ -105,15 +203,20 @@ export const api = {
   getBlogPosts: () => request<BlogPost[]>('/api/v1/blog'),
   getBlogPostBySlug: (slug: string) =>
     request<BlogPost>(`/api/v1/blog/${encodeURIComponent(slug)}`),
-  createOrder: (payload: CreateOrderInput) =>
-    request<Order>('/api/v1/orders', {
+  createOrder: async (payload: CreateOrderInput) => {
+    const order = await request<Order>('/api/v1/orders', {
       method: 'POST',
       body: JSON.stringify(payload),
-    }),
-  trackOrder: (code: string, phone?: string) => {
-    const sp = new URLSearchParams({ code });
+    });
+    saveOrderToLocalCache(order);
+    return order;
+  },
+  trackOrder: async (code: string, phone?: string) => {
+    await syncLocalOrdersWithServer();
+    const sp = new URLSearchParams();
+    if (code) sp.set('code', code);
     if (phone) sp.set('phone', phone);
-    return request<Order>(`/api/v1/orders/track?${sp.toString()}`);
+    return request<Order & { allOrdersByPhone?: Order[] }>(`/api/v1/orders/track?${sp.toString()}`);
   },
   subscribeNewsletter: (email: string, honeypot = '') =>
     request<{ email: string; subscribed?: boolean; alreadySubscribed?: boolean }>(
@@ -124,19 +227,79 @@ export const api = {
       }
     ),
 
+  // Customer Account endpoints
+  customerRegister: async (payload: CustomerRegisterInput) => {
+    await syncLocalOrdersWithServer();
+    const res = await request<{ user: CustomerUser; token: string }>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) setSavedCustomerToken(res.token);
+    return res;
+  },
+  customerLogin: async (payload: CustomerLoginInput) => {
+    await syncLocalOrdersWithServer();
+    const res = await request<{ user: CustomerUser; token: string }>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) setSavedCustomerToken(res.token);
+    return res;
+  },
+  customerLogout: async () => {
+    const res = await request<{ loggedOut: boolean }>('/api/v1/auth/logout', {
+      method: 'POST',
+    }).catch(() => ({ loggedOut: true }));
+    setSavedCustomerToken(null);
+    return res;
+  },
+  customerMe: () => request<{ user: CustomerUser }>('/api/v1/auth/me'),
+  updateCustomerProfile: (payload: CustomerProfileInput) =>
+    request<{ user: CustomerUser }>('/api/v1/account/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  updateCustomerPassword: (payload: { current_password: string; new_password: string }) =>
+    request<{ updated: boolean }>('/api/v1/account/password', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  getCustomerOrders: async () => {
+    await syncLocalOrdersWithServer();
+    const orders = await request<Order[]>('/api/v1/account/orders');
+    for (const o of orders) {
+      saveOrderToLocalCache(o);
+    }
+    return orders;
+  },
+  cancelCustomerOrder: (id: number, reason?: string) =>
+    request<Order>(`/api/v1/account/orders/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
   // Admin endpoints
-  adminLogin: (email: string, password: string) =>
-    request<{ user: AdminUser }>('/api/v1/admin/auth/login', {
+  adminLogin: async (email: string, password: string) => {
+    await syncLocalOrdersWithServer();
+    const res = await request<{ user: AdminUser; token?: string }>('/api/v1/admin/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-    }),
-  adminLogout: () =>
-    request<{ loggedOut: boolean }>('/api/v1/admin/auth/logout', {
+    });
+    if (res.token) setSavedAdminToken(res.token);
+    return res;
+  },
+  adminLogout: async () => {
+    const res = await request<{ loggedOut: boolean }>('/api/v1/admin/auth/logout', {
       method: 'POST',
-    }),
+    }).catch(() => ({ loggedOut: true }));
+    setSavedAdminToken(null);
+    return res;
+  },
   adminMe: () => request<{ user: AdminUser }>('/api/v1/admin/auth/me'),
-  getAdminDashboard: (days = 30) =>
-    request<DashboardData>(`/api/v1/admin/dashboard?days=${days}`),
+  getAdminDashboard: async (days = 30) => {
+    await syncLocalOrdersWithServer();
+    return request<DashboardData>(`/api/v1/admin/dashboard?days=${days}`);
+  },
   getAdminProducts: (q = '') =>
     request<Product[]>(`/api/v1/admin/products${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   getAdminProductById: (id: number) =>
@@ -171,7 +334,8 @@ export const api = {
     request<{ id: number; deleted: boolean }>(`/api/v1/admin/categories/${id}`, {
       method: 'DELETE',
     }),
-  getAdminOrders: (params: { status?: string; q?: string; from?: string; to?: string }) => {
+  getAdminOrders: async (params: { status?: string; q?: string; from?: string; to?: string }) => {
+    await syncLocalOrdersWithServer();
     const sp = new URLSearchParams();
     if (params.status && params.status !== 'all') sp.set('status', params.status);
     if (params.q) sp.set('q', params.q);

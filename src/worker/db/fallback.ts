@@ -430,19 +430,153 @@ const mem: MemoryStore = {
   initialized: false,
 };
 
+const EDGE_CACHE_STATE_URL = 'https://edge-state.moccoffee.internal/__db_snapshot_v2';
+
+function mergeByKey<T extends Record<string, any>>(target: T[], incoming: T[], key: keyof T): T[] {
+  const map = new Map<any, T>();
+  for (const item of target) {
+    map.set(item[key], item);
+  }
+  for (const item of incoming) {
+    const existing = map.get(item[key]);
+    if (!existing) {
+      map.set(item[key], item);
+    } else {
+      // Ưu tiên bản ghi có updated_at mới hơn hoặc giữ trạng thái mới nhất
+      const t1 = existing.updated_at || existing.created_at || '';
+      const t2 = item.updated_at || item.created_at || '';
+      if (t2 >= t1) {
+        map.set(item[key], { ...existing, ...item });
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+async function syncFromEdgeCache(): Promise<void> {
+  try {
+    const cacheStorage = (globalThis as any).caches?.default;
+    if (!cacheStorage) return;
+    const res = await cacheStorage.match(EDGE_CACHE_STATE_URL);
+    if (!res) return;
+    const snap = (await res.json()) as Partial<MemoryStore>;
+    if (snap.users?.length) {
+      mem.users = mergeByKey(mem.users, snap.users, 'email');
+    }
+    if (snap.sessions?.length) {
+      mem.sessions = mergeByKey(mem.sessions, snap.sessions, 'token_hash');
+    }
+    if (snap.orders?.length) {
+      mem.orders = mergeByKey(mem.orders, snap.orders, 'order_code');
+    }
+    if (snap.order_items?.length) {
+      const existingKeys = new Set(
+        mem.order_items.map((i) => `${i.order_id}_${i.product_id}_${i.grind_type}`)
+      );
+      for (const item of snap.order_items) {
+        const k = `${item.order_id}_${item.product_id}_${item.grind_type}`;
+        if (!existingKeys.has(k)) {
+          mem.order_items.push(item);
+          existingKeys.add(k);
+        }
+      }
+    }
+    if (snap.order_status_history?.length) {
+      const existingHist = new Set(
+        mem.order_status_history.map((h) => `${h.order_id}_${h.new_status}_${h.created_at}`)
+      );
+      for (const h of snap.order_status_history) {
+        const k = `${h.order_id}_${h.new_status}_${h.created_at}`;
+        if (!existingHist.has(k)) {
+          mem.order_status_history.push(h);
+          existingHist.add(k);
+        }
+      }
+    }
+    if (snap.products?.length) {
+      mem.products = mergeByKey(mem.products, snap.products, 'id');
+    }
+    if (snap.categories?.length) {
+      mem.categories = mergeByKey(mem.categories, snap.categories, 'id');
+    }
+    if (snap.newsletter_subscribers?.length) {
+      mem.newsletter_subscribers = mergeByKey(
+        mem.newsletter_subscribers,
+        snap.newsletter_subscribers,
+        'email'
+      );
+    }
+  } catch {
+    // Ignore cache sync errors in non-edge environments
+  }
+}
+
+async function persistToEdgeCache(): Promise<void> {
+  try {
+    const cacheStorage = (globalThis as any).caches?.default;
+    if (!cacheStorage) return;
+    await syncFromEdgeCache();
+    const payload = JSON.stringify({
+      users: mem.users,
+      sessions: mem.sessions,
+      orders: mem.orders,
+      order_items: mem.order_items,
+      order_status_history: mem.order_status_history,
+      products: mem.products,
+      categories: mem.categories,
+      newsletter_subscribers: mem.newsletter_subscribers,
+    });
+    const response = new Response(payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=2592000',
+      },
+    });
+    await cacheStorage.put(EDGE_CACHE_STATE_URL, response);
+  } catch {
+    // Ignore cache write errors in non-edge environments
+  }
+}
+
 async function ensureMemAdmin() {
   if (mem.users.length === 0) {
     const { hash, salt } = await hashPassword('MocCoffee@2026');
-    mem.users.push({
-      id: 1,
-      email: 'admin@moccoffee.vn',
-      full_name: 'Quản trị viên MỘC Coffee',
-      password_hash: hash,
-      password_salt: salt,
-      role: 'admin',
-      is_active: 1,
-    });
+    mem.users.push(
+      {
+        id: 1,
+        email: 'admin@moccoffee.vn',
+        phone: '0909888999',
+        full_name: 'Quản trị viên MỘC Coffee',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'admin',
+        province: 'TP. Hồ Chí Minh',
+        district: 'Quận 1',
+        ward: 'Phường Bến Nghé',
+        shipping_address: 'Số 86 Nguyễn Huệ',
+        is_active: 1,
+        created_at: '2026-10-19 08:00:00',
+        updated_at: '2026-10-19 08:00:00',
+      },
+      {
+        id: 2,
+        email: 'khachhang@moccoffee.vn',
+        phone: '0901234567',
+        full_name: 'Nguyễn Minh Anh',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'TP. Hồ Chí Minh',
+        district: 'Quận 3',
+        ward: 'Phường Võ Thị Sáu',
+        shipping_address: 'Số 128 Điện Biên Phủ',
+        is_active: 1,
+        created_at: '2026-10-19 08:00:00',
+        updated_at: '2026-10-19 08:00:00',
+      }
+    );
   }
+  await syncFromEdgeCache();
 }
 
 function attachCategoryNames(products: any[]) {
@@ -468,6 +602,9 @@ export function createFallbackD1(): D1Database {
 
       // Counts
       if (lower.startsWith('select count(*) as count from users')) {
+        if (lower.includes("role = 'admin'")) {
+          return [{ count: mem.users.filter((u) => u.role === 'admin').length }];
+        }
         return [{ count: mem.users.length }];
       }
       if (lower.startsWith('select count(*) as count from products')) {
@@ -552,10 +689,49 @@ export function createFallbackD1(): D1Database {
         return sub ? [sub] : [];
       }
 
-      // Auth & Sessions
-      if (lower.startsWith('select * from users where email = ?')) {
-        const u = mem.users.find((user) => user.email === bound[0]);
+      // Auth & Users & Sessions
+      if (lower.includes('from users where (lower(email) = ? or phone = ?)')) {
+        const emailOrPhone1 = String(bound[0] || '').toLowerCase();
+        const emailOrPhone2 = String(bound[1] || '').trim();
+        const u = mem.users.find(
+          (user) =>
+            user.is_active === 1 &&
+            (user.email.toLowerCase() === emailOrPhone1 ||
+              (user.phone && user.phone === emailOrPhone2))
+        );
         return u ? [u] : [];
+      }
+      if (lower.includes('from users where lower(email) = ? or phone = ?')) {
+        const emailParam = String(bound[0] || '').toLowerCase();
+        const phoneParam = String(bound[1] || '').trim();
+        const excludeId = bound[2] ? Number(bound[2]) : undefined;
+        const u = mem.users.find(
+          (user) =>
+            user.id !== excludeId &&
+            (user.email.toLowerCase() === emailParam ||
+              (phoneParam && user.phone === phoneParam))
+        );
+        return u ? [u] : [];
+      }
+      if (lower.startsWith('select * from users where id = ?')) {
+        const u = mem.users.find((user) => user.id === Number(bound[0]));
+        return u ? [u] : [];
+      }
+      if (lower.startsWith('select * from users where email = ?')) {
+        const u = mem.users.find(
+          (user) => user.email.toLowerCase() === String(bound[0] || '').toLowerCase()
+        );
+        return u ? [u] : [];
+      }
+      if (lower.startsWith('select id from users where phone = ?')) {
+        const phoneVal = String(bound[0] || '').trim();
+        const emailVal = String(bound[1] || '').toLowerCase();
+        const u = mem.users.find(
+          (user) =>
+            (phoneVal && user.phone === phoneVal) ||
+            (emailVal && user.email.toLowerCase() === emailVal)
+        );
+        return u ? [{ id: u.id }] : [];
       }
       if (lower.includes('from sessions s inner join users u')) {
         const s = mem.sessions.find((sess) => sess.token_hash === bound[0]);
@@ -569,9 +745,15 @@ export function createFallbackD1(): D1Database {
             expires_at: s.expires_at,
             user_id: u.id,
             email: u.email,
+            phone: u.phone || '',
             full_name: u.full_name,
             role: u.role,
+            province: u.province || 'TP. Hồ Chí Minh',
+            district: u.district || '',
+            ward: u.ward || '',
+            shipping_address: u.shipping_address || '',
             is_active: u.is_active,
+            created_at: u.created_at,
           },
         ];
       }
@@ -654,21 +836,59 @@ export function createFallbackD1(): D1Database {
       if (lower.startsWith('select * from product_variants')) return [];
       if (lower.startsWith('select * from product_images')) return [];
 
-      // Orders & Dashboard
+      // Orders & Customer Orders & Dashboard
       if (lower.startsWith('select * from orders where idempotency_key = ?')) {
         const o = mem.orders.find((ord) => ord.idempotency_key === bound[0]);
         return o ? [o] : [];
       }
       if (lower.startsWith('select * from orders where upper(order_code) = ?')) {
-        const o = mem.orders.find((ord) => ord.order_code.toUpperCase() === bound[0]);
+        const o = mem.orders.find(
+          (ord) => String(ord.order_code || '').toUpperCase() === String(bound[0] || '').toUpperCase()
+        );
         return o ? [o] : [];
+      }
+      if (lower.startsWith('select * from orders where customer_phone = ?')) {
+        const targetPhone = String(bound[0] || '').trim();
+        return [...mem.orders]
+          .filter((ord) => ord.customer_phone === targetPhone)
+          .reverse();
+      }
+      if (lower.includes('from orders where user_id = ? or customer_phone = ?')) {
+        const uid = Number(bound[0]);
+        const uphone = String(bound[1] || '').trim();
+        const uemail = String(bound[2] || '').toLowerCase();
+        return [...mem.orders]
+          .filter(
+            (ord) =>
+              ord.user_id === uid ||
+              (uphone && ord.customer_phone === uphone) ||
+              (uemail && String(ord.customer_email || '').toLowerCase() === uemail)
+          )
+          .reverse();
       }
       if (lower.startsWith('select * from orders where id = ?')) {
         const o = mem.orders.find((ord) => ord.id === Number(bound[0]));
         return o ? [o] : [];
       }
       if (lower.startsWith('select * from orders')) {
-        return [...mem.orders].reverse();
+        let list = [...mem.orders].reverse();
+        if (lower.includes('and status = ?')) {
+          const st = bound[0];
+          if (st) list = list.filter((o) => o.status === st);
+        }
+        for (const param of bound) {
+          if (typeof param === 'string' && param.startsWith('%') && param.endsWith('%')) {
+            const kw = param.slice(1, -1).toLowerCase();
+            list = list.filter(
+              (o) =>
+                String(o.order_code || '').toLowerCase().includes(kw) ||
+                String(o.customer_name || '').toLowerCase().includes(kw) ||
+                String(o.customer_phone || '').includes(kw)
+            );
+            break;
+          }
+        }
+        return list;
       }
       if (lower.startsWith('select * from order_items where order_id = ?')) {
         return mem.order_items.filter((i) => i.order_id === Number(bound[0]));
@@ -706,6 +926,77 @@ export function createFallbackD1(): D1Database {
     }> {
       await ensureMemAdmin();
 
+      if (lower.startsWith('insert into users')) {
+        const id =
+          mem.users.reduce((max, u) => Math.max(max, Number(u.id) || 0), 0) + 1;
+        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        mem.users.push({
+          id,
+          email: String(bound[0] || '').toLowerCase(),
+          phone: bound[1] || '',
+          full_name: bound[2],
+          password_hash: bound[3],
+          password_salt: bound[4],
+          role: bound[5] || 'customer',
+          province: bound[6] || 'TP. Hồ Chí Minh',
+          district: bound[7] || '',
+          ward: bound[8] || '',
+          shipping_address: bound[9] || '',
+          is_active: 1,
+          created_at: nowStr,
+          updated_at: nowStr,
+        });
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: id } };
+      }
+
+      if (lower.startsWith('update users set full_name = ?')) {
+        const uid = Number(bound[6]);
+        const u = mem.users.find((user) => user.id === uid);
+        if (u) {
+          u.full_name = bound[0];
+          u.phone = bound[1];
+          u.province = bound[2];
+          u.district = bound[3];
+          u.ward = bound[4];
+          u.shipping_address = bound[5];
+          u.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: u ? 1 : 0, last_row_id: uid } };
+      }
+
+      if (lower.startsWith('update users set password_hash = ?')) {
+        const uid = Number(bound[2]);
+        const u = mem.users.find((user) => user.id === uid);
+        if (u) {
+          u.password_hash = bound[0];
+          u.password_salt = bound[1];
+          u.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: u ? 1 : 0, last_row_id: uid } };
+      }
+
+      if (lower.startsWith('update orders set user_id = ?')) {
+        const uid = Number(bound[0]);
+        const phoneVal = String(bound[1] || '').trim();
+        const emailVal = String(bound[2] || '').toLowerCase();
+        let changes = 0;
+        for (const ord of mem.orders) {
+          if (
+            !ord.user_id &&
+            ((phoneVal && ord.customer_phone === phoneVal) ||
+              (emailVal && String(ord.customer_email || '').toLowerCase() === emailVal))
+          ) {
+            ord.user_id = uid;
+            changes++;
+          }
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes, last_row_id: 0 } };
+      }
+
       if (lower.startsWith('insert into sessions')) {
         mem.sessions.push({
           id: mem.sessions.length + 1,
@@ -716,11 +1007,13 @@ export function createFallbackD1(): D1Database {
           user_agent: bound[4],
           expires_at: bound[5],
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: mem.sessions.length } };
       }
 
       if (lower.startsWith('delete from sessions where token_hash = ?')) {
         mem.sessions = mem.sessions.filter((s) => s.token_hash !== bound[0]);
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: 0 } };
       }
 
@@ -730,6 +1023,7 @@ export function createFallbackD1(): D1Database {
         const prod = mem.products.find((p) => p.id === id && p.is_active === 1 && p.stock >= qty);
         if (!prod) return { success: false, meta: { changes: 0, last_row_id: 0 } };
         prod.stock -= qty;
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
@@ -738,38 +1032,46 @@ export function createFallbackD1(): D1Database {
         const id = Number(bound[1]);
         const prod = mem.products.find((p) => p.id === id);
         if (prod) prod.stock += qty;
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
       if (lower.startsWith('insert into orders')) {
-        const id = mem.orders.length + 1;
+        const id =
+          mem.orders.reduce((max, o) => Math.max(max, Number(o.id) || 0), 0) + 1;
+        const hasUserId = lower.includes('user_id');
+        const offset = hasUserId ? 1 : 0;
+        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
         mem.orders.push({
           id,
-          order_code: bound[0],
-          idempotency_key: bound[1],
-          customer_name: bound[2],
-          customer_phone: bound[3],
-          customer_email: bound[4],
-          shipping_address: bound[5],
-          province: bound[6],
-          district: bound[7],
-          ward: bound[8],
-          notes: bound[9],
-          payment_method: bound[10],
+          user_id: hasUserId ? bound[0] : null,
+          order_code: bound[0 + offset],
+          idempotency_key: bound[1 + offset],
+          customer_name: bound[2 + offset],
+          customer_phone: bound[3 + offset],
+          customer_email: bound[4 + offset],
+          shipping_address: bound[5 + offset],
+          province: bound[6 + offset],
+          district: bound[7 + offset],
+          ward: bound[8 + offset],
+          notes: bound[9 + offset],
+          payment_method: bound[10 + offset],
           payment_status: 'unpaid',
           status: 'pending',
-          subtotal: bound[11],
-          shipping_fee: bound[12],
+          subtotal: bound[11 + offset],
+          shipping_fee: bound[12 + offset],
           discount_amount: 0,
-          total: bound[13],
-          created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
-          updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          total: bound[13 + offset],
+          created_at: nowStr,
+          updated_at: nowStr,
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
       if (lower.startsWith('insert into order_items')) {
-        const id = mem.order_items.length + 1;
+        const id =
+          mem.order_items.reduce((max, i) => Math.max(max, Number(i.id) || 0), 0) + 1;
         mem.order_items.push({
           id,
           order_id: bound[0],
@@ -783,11 +1085,13 @@ export function createFallbackD1(): D1Database {
           line_total: bound[8],
           image_url_snapshot: bound[9],
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
       if (lower.startsWith('insert into order_status_history')) {
-        const id = mem.order_status_history.length + 1;
+        const id =
+          mem.order_status_history.reduce((max, h) => Math.max(max, Number(h.id) || 0), 0) + 1;
         mem.order_status_history.push({
           id,
           order_id: bound[0],
@@ -797,6 +1101,7 @@ export function createFallbackD1(): D1Database {
           changed_by: bound[4],
           created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
@@ -805,7 +1110,9 @@ export function createFallbackD1(): D1Database {
         if (ord) {
           ord.status = bound[0];
           ord.payment_status = bound[1];
+          ord.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
         }
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: Number(bound[2]) } };
       }
 
@@ -818,11 +1125,13 @@ export function createFallbackD1(): D1Database {
           source: 'website_newsletter',
           created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
       if (lower.startsWith('insert into products')) {
-        const id = mem.products.length + 1;
+        const id =
+          mem.products.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0) + 1;
         mem.products.push({
           id,
           category_id: Number(bound[0]),
@@ -850,9 +1159,11 @@ export function createFallbackD1(): D1Database {
           created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
           updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
         });
+        await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
+      await persistToEdgeCache();
       return { success: true, meta: { changes: 1, last_row_id: 1 } };
     }
 
@@ -885,6 +1196,7 @@ export function createFallbackD1(): D1Database {
       for (const st of statements) {
         results.push(await st.run());
       }
+      await persistToEdgeCache();
       return results;
     },
     async exec() {
