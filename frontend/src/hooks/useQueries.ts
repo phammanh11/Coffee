@@ -119,7 +119,10 @@ export function useSaveAdminProduct() {
   return useMutation({
     mutationFn: ({ id, payload }: { id?: number; payload: ProductFormInput }) =>
       id ? api.updateAdminProduct(id, payload) : api.createAdminProduct(payload),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
+      if (vars.id) {
+        qc.invalidateQueries({ queryKey: ['adminProduct', vars.id] });
+      }
       qc.invalidateQueries({ queryKey: ['adminProducts'] });
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: ['homeData'] });

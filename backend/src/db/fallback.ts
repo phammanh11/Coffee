@@ -461,50 +461,28 @@ async function syncFromEdgeCache(): Promise<void> {
     if (!res) return;
     const snap = (await res.json()) as Partial<MemoryStore>;
     if (snap.users?.length) {
-      mem.users = mergeByKey(mem.users, snap.users, 'email');
+      mem.users = snap.users;
     }
     if (snap.sessions?.length) {
-      mem.sessions = mergeByKey(mem.sessions, snap.sessions, 'token_hash');
+      mem.sessions = snap.sessions;
     }
     if (snap.orders?.length) {
-      mem.orders = mergeByKey(mem.orders, snap.orders, 'order_code');
+      mem.orders = snap.orders;
     }
     if (snap.order_items?.length) {
-      const existingKeys = new Set(
-        mem.order_items.map((i) => `${i.order_id}_${i.product_id}_${i.grind_type}`)
-      );
-      for (const item of snap.order_items) {
-        const k = `${item.order_id}_${item.product_id}_${item.grind_type}`;
-        if (!existingKeys.has(k)) {
-          mem.order_items.push(item);
-          existingKeys.add(k);
-        }
-      }
+      mem.order_items = snap.order_items;
     }
     if (snap.order_status_history?.length) {
-      const existingHist = new Set(
-        mem.order_status_history.map((h) => `${h.order_id}_${h.new_status}_${h.created_at}`)
-      );
-      for (const h of snap.order_status_history) {
-        const k = `${h.order_id}_${h.new_status}_${h.created_at}`;
-        if (!existingHist.has(k)) {
-          mem.order_status_history.push(h);
-          existingHist.add(k);
-        }
-      }
+      mem.order_status_history = snap.order_status_history;
     }
-    if (snap.products?.length) {
-      mem.products = mergeByKey(mem.products, snap.products, 'id');
+    if (Array.isArray(snap.products) && snap.products.length > 0) {
+      mem.products = snap.products;
     }
-    if (snap.categories?.length) {
-      mem.categories = mergeByKey(mem.categories, snap.categories, 'id');
+    if (Array.isArray(snap.categories) && snap.categories.length > 0) {
+      mem.categories = snap.categories;
     }
     if (snap.newsletter_subscribers?.length) {
-      mem.newsletter_subscribers = mergeByKey(
-        mem.newsletter_subscribers,
-        snap.newsletter_subscribers,
-        'email'
-      );
+      mem.newsletter_subscribers = snap.newsletter_subscribers;
     }
   } catch {
     // Ignore cache sync errors in non-edge environments
@@ -515,7 +493,6 @@ async function persistToEdgeCache(): Promise<void> {
   try {
     const cacheStorage = (globalThis as any).caches?.default;
     if (!cacheStorage) return;
-    await syncFromEdgeCache();
     const payload = JSON.stringify({
       users: mem.users,
       sessions: mem.sessions,
@@ -539,6 +516,10 @@ async function persistToEdgeCache(): Promise<void> {
 }
 
 async function ensureMemAdmin() {
+  if (!mem.initialized) {
+    mem.initialized = true;
+    await syncFromEdgeCache();
+  }
   if (mem.users.length === 0) {
     const { hash, salt } = await hashPassword('MocCoffee@2026');
     mem.users.push(
@@ -576,7 +557,6 @@ async function ensureMemAdmin() {
       }
     );
   }
-  await syncFromEdgeCache();
 }
 
 function attachCategoryNames(products: any[]) {
@@ -1161,6 +1141,128 @@ export function createFallbackD1(): D1Database {
         });
         await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
+      }
+
+      // Xóa sản phẩm khỏi database
+      if (lower.startsWith('delete from products where id = ?')) {
+        const id = Number(bound[0]);
+        mem.products = mem.products.filter((p) => p.id !== id);
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: id } };
+      }
+
+      // Ngừng kinh doanh sản phẩm (soft delete khi có đơn hàng)
+      if (lower.startsWith('update products set is_active = 0')) {
+        const id = Number(bound[0]);
+        const prod = mem.products.find((p) => p.id === id);
+        if (prod) {
+          prod.is_active = 0;
+          prod.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: prod ? 1 : 0, last_row_id: id } };
+      }
+
+      // Bật / Tắt trạng thái sản phẩm trực tiếp (toggle is_active)
+      if (lower.startsWith('update products set is_active = ?')) {
+        const newStatus = Number(bound[0]);
+        const id = Number(bound[1]);
+        const prod = mem.products.find((p) => p.id === id);
+        if (prod) {
+          prod.is_active = newStatus;
+          prod.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: prod ? 1 : 0, last_row_id: id } };
+      }
+
+      // Chỉnh sửa thông tin sản phẩm (Full update)
+      if (lower.startsWith('update products set') && lower.includes('category_id = ?')) {
+        const id = Number(bound[20]);
+        const prod = mem.products.find((p) => p.id === id);
+        if (prod) {
+          prod.category_id = Number(bound[0]);
+          prod.name = bound[1];
+          prod.slug = bound[2];
+          prod.sku = bound[3];
+          prod.origin = bound[4];
+          prod.roast_level = bound[5];
+          prod.process_method = bound[6];
+          prod.tasting_notes = bound[7];
+          prod.short_description = bound[8];
+          prod.description = bound[9];
+          prod.price = Number(bound[10]);
+          prod.sale_price = bound[11] != null && bound[11] !== '' ? Number(bound[11]) : null;
+          prod.stock = Number(bound[12]);
+          prod.weight_grams = Number(bound[13]);
+          prod.button_color = bound[14] || '#4A2E24';
+          prod.badge_text = bound[15] || '';
+          prod.is_featured = Number(bound[16]);
+          prod.is_active = Number(bound[17]);
+          prod.image_url = bound[18];
+          prod.image_key = bound[19] || null;
+          prod.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: prod ? 1 : 0, last_row_id: id } };
+      }
+
+      // Xóa danh mục
+      if (lower.startsWith('delete from categories where id = ?')) {
+        const id = Number(bound[0]);
+        mem.categories = mem.categories.filter((c) => c.id !== id);
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: id } };
+      }
+
+      // Thêm mới danh mục
+      if (lower.startsWith('insert into categories')) {
+        const id =
+          mem.categories.reduce((max, c) => Math.max(max, Number(c.id) || 0), 0) + 1;
+        mem.categories.push({
+          id,
+          name: bound[0],
+          slug: bound[1],
+          description: bound[2],
+          image_url: bound[3],
+          is_active: Number(bound[4]),
+          sort_order: Number(bound[5]),
+          created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        });
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: id } };
+      }
+
+      // Cập nhật danh mục
+      if (lower.startsWith('update categories set')) {
+        const id = Number(bound[6]);
+        const cat = mem.categories.find((c) => c.id === id);
+        if (cat) {
+          cat.name = bound[0];
+          cat.slug = bound[1];
+          cat.description = bound[2];
+          cat.image_url = bound[3];
+          cat.is_active = Number(bound[4]);
+          cat.sort_order = Number(bound[5]);
+          cat.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: cat ? 1 : 0, last_row_id: id } };
+      }
+
+      // Cập nhật nội dung CMS (site_content)
+      if (lower.startsWith('update site_content set')) {
+        const key = bound[bound.length - 1];
+        const sc = mem.site_content.find((s) => s.section_key === key);
+        if (sc) {
+          sc.title = bound[0];
+          sc.subtitle = bound[1];
+          sc.content_json = bound[2];
+          sc.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: sc ? 1 : 0, last_row_id: 1 } };
       }
 
       await persistToEdgeCache();

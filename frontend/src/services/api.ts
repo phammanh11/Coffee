@@ -346,6 +346,11 @@ export const api = {
       `/api/v1/admin/products/${id}`,
       { method: 'DELETE' }
     ),
+  toggleAdminProductStatus: (id: number, isActive: boolean) =>
+    request<Product>(`/api/v1/admin/products/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: isActive }),
+    }),
   getAdminCategories: () => request<Category[]>('/api/v1/admin/categories'),
   createAdminCategory: (payload: Partial<Category>) =>
     request<Category>('/api/v1/admin/categories', {

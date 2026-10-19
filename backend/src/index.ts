@@ -1890,6 +1890,36 @@ app.put('/api/v1/admin/products/:id', async (c) => {
   return ok(c, updated, 'Cập nhật sản phẩm thành công.');
 });
 
+// Bật / Tắt trạng thái sản phẩm (PATCH /api/v1/admin/products/:id/status)
+app.patch('/api/v1/admin/products/:id/status', async (c) => {
+  const id = Number(c.req.param('id'));
+  const body = await c.req.json().catch(() => ({}));
+  const isActive = body.is_active ? 1 : 0;
+
+  const existing = await c.env.DB.prepare('SELECT id, name FROM products WHERE id = ?')
+    .bind(id)
+    .first<{ id: number; name: string }>();
+
+  if (!existing) {
+    return fail(c, 'NOT_FOUND', 'Không tìm thấy sản phẩm.', 404);
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE products SET is_active = ?, updated_at = datetime('now') WHERE id = ?"
+  )
+    .bind(isActive, id)
+    .run();
+
+  const updated = await c.env.DB.prepare('SELECT * FROM products WHERE id = ?').bind(id).first();
+  return ok(
+    c,
+    updated,
+    isActive === 1
+      ? `Đã mở bán sản phẩm "${existing.name}".`
+      : `Đã tạm ngừng bán sản phẩm "${existing.name}".`
+  );
+});
+
 app.delete('/api/v1/admin/products/:id', async (c) => {
   const id = Number(c.req.param('id'));
   const orderRefs = await c.env.DB.prepare(

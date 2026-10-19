@@ -424,6 +424,62 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     const json = (await res.json()) as any;
     expect(json.success).toBe(true);
     expect(json.data.slug).toBe('ca-phe-liberica-quang-tri');
+    const createdProdId = json.data.id;
+
+    // Test PATCH status (Bật / Tắt trạng thái kinh doanh)
+    const toggleOffRes = await app.request(
+      `/api/v1/admin/products/${createdProdId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: adminCookie,
+        },
+        body: JSON.stringify({ is_active: 0 }),
+      },
+      env
+    );
+    expect(toggleOffRes.status).toBe(200);
+    const toggleOffJson = (await toggleOffRes.json()) as any;
+    expect(toggleOffJson.data.is_active).toBe(0);
+
+    // Test PUT chỉnh sửa thông tin sản phẩm
+    const updateRes = await app.request(
+      `/api/v1/admin/products/${createdProdId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: adminCookie,
+        },
+        body: JSON.stringify({
+          ...newProduct,
+          name: 'Cà Phê Liberica Khe Sanh',
+          price: 210000,
+          is_active: 1,
+        }),
+      },
+      env
+    );
+    expect(updateRes.status).toBe(200);
+    const updateJson = (await updateRes.json()) as any;
+    expect(updateJson.data.name).toBe('Cà Phê Liberica Khe Sanh');
+    expect(updateJson.data.price).toBe(210000);
+
+    // Test DELETE xóa sản phẩm khỏi database
+    const deleteRes = await app.request(
+      `/api/v1/admin/products/${createdProdId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Cookie: adminCookie,
+        },
+      },
+      env
+    );
+    expect(deleteRes.status).toBe(200);
+    const deleteJson = (await deleteRes.json()) as any;
+    expect(deleteJson.data.deleted).toBe(true);
   });
 
   it('14. Admin cập nhật trạng thái đơn hàng hợp lệ và chặn chuyển ngược từ trạng thái cuối', async () => {
