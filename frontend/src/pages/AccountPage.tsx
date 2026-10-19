@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import {
   User,
   Package,
@@ -40,10 +40,19 @@ import type { Order } from '../../shared/types';
 
 export default function AccountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const initialTab = searchParams.get('tab') || 'orders';
 
   const { customer, isAdmin, isLoading: authLoading, login, register, updateProfile, logout } =
     useCustomerAuth();
+
+  // Tự động chuyển hướng thẳng vào Bảng điều khiển Quản trị (/admin) khi tài khoản là Admin
+  useEffect(() => {
+    if (customer && (customer.role === 'admin' || customer.role === 'staff')) {
+      navigate('/admin', { replace: true });
+    }
+  }, [customer, navigate]);
+
   const { data: adminKpi } = useAdminDashboard(30);
   const { showToast } = useToast();
   const { openDrawer } = useCart();
@@ -174,12 +183,13 @@ export default function AccountPage() {
       });
       if (user.role === 'admin' || user.role === 'staff') {
         showToast(
-          `Đăng nhập Quản Trị Viên thành công! Toàn bộ tính năng Quản trị (Full Option) đã sẵn sàng.`,
+          'Đăng nhập Quản Trị Viên thành công! Đang chuyển vào Bảng điều khiển...',
           'success'
         );
-      } else {
-        showToast(`Chào mừng ${user.full_name} quay trở lại!`, 'success');
+        navigate('/admin', { replace: true });
+        return;
       }
+      showToast(`Chào mừng ${user.full_name} quay trở lại!`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.', 'error');
     } finally {
@@ -283,6 +293,18 @@ export default function AccountPage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-[#4A2E24] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Nếu là Quản trị viên, không hiển thị giao diện khách hàng mà chuyển hướng thẳng vào /admin
+  if (customer && (customer.role === 'admin' || customer.role === 'staff')) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-2 border-[#4A2E24] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-medium text-[#777067]">
+          Đang chuyển hướng sang Bảng Điều Khiển Quản Trị (Admin)...
+        </p>
       </div>
     );
   }

@@ -51,13 +51,16 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   const refreshCustomer = useCallback(async () => {
     try {
       const res = await api.customerMe();
-      setCustomer(res.user);
-      saveCachedProfile(res.user);
-    } catch {
-      if (!getSavedCustomerToken()) {
+      if (res && res.user) {
+        setCustomer(res.user);
+        saveCachedProfile(res.user);
+      } else {
         setCustomer(null);
         saveCachedProfile(null);
       }
+    } catch {
+      setCustomer(null);
+      saveCachedProfile(null);
     } finally {
       setIsLoading(false);
     }

@@ -272,8 +272,8 @@ export const api = {
     return res;
   },
   customerMe: async () => {
-    const res = await request<{ user: CustomerUser }>('/api/v1/auth/me');
-    if (res.user.role === 'admin' || res.user.role === 'staff') {
+    const res = await request<{ user: CustomerUser | null }>('/api/v1/auth/me');
+    if (res.user && (res.user.role === 'admin' || res.user.role === 'staff')) {
       const token = getSavedCustomerToken();
       if (token && !getSavedAdminToken()) {
         setSavedAdminToken(token);
@@ -322,7 +322,7 @@ export const api = {
     setSavedAdminToken(null);
     return res;
   },
-  adminMe: () => request<{ user: AdminUser }>('/api/v1/admin/auth/me'),
+  adminMe: () => request<{ user: AdminUser | null }>('/api/v1/admin/auth/me'),
   getAdminDashboard: async (days = 30) => {
     await syncLocalOrdersWithServer();
     return request<DashboardData>(`/api/v1/admin/dashboard?days=${days}`);

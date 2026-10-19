@@ -1182,9 +1182,6 @@ app.post('/api/v1/auth/logout', async (c) => {
 // Lấy thông tin tài khoản khách hàng hiện tại (GET /api/v1/auth/me)
 app.get('/api/v1/auth/me', async (c) => {
   const customer = await getAuthenticatedCustomer(c);
-  if (!customer) {
-    return fail(c, 'UNAUTHORIZED', 'Chưa đăng nhập tài khoản.', 401);
-  }
   return ok(c, { user: customer });
 });
 
@@ -1626,9 +1623,6 @@ app.post('/api/v1/admin/auth/logout', async (c) => {
 // 16. Kiểm tra phiên đăng nhập Admin (GET /api/v1/admin/auth/me)
 app.get('/api/v1/admin/auth/me', async (c) => {
   const admin = await getAuthenticatedAdmin(c);
-  if (!admin) {
-    return fail(c, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập.', 401);
-  }
   return ok(c, { user: admin });
 });
 

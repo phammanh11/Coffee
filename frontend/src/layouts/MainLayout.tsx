@@ -143,14 +143,14 @@ export function MainLayout() {
             </Link>
 
             <Link
-              to="/account"
+              to={customer && (customer.role === 'admin' || customer.role === 'staff') ? '/admin' : '/account'}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[#F7F2EA]/90 hover:text-white hover:bg-white/10 transition-colors border border-white/10"
-              aria-label="Tài khoản & Đơn hàng của tôi"
-              title={customer ? `Tài khoản: ${customer.full_name}` : 'Đăng nhập / Đơn hàng của tôi'}
+              aria-label={customer && (customer.role === 'admin' || customer.role === 'staff') ? 'Bảng điều khiển Quản trị' : 'Tài khoản & Đơn hàng của tôi'}
+              title={customer ? (customer.role === 'admin' || customer.role === 'staff' ? `Admin: ${customer.full_name}` : `Tài khoản: ${customer.full_name}`) : 'Đăng nhập / Đơn hàng của tôi'}
             >
               <User className="w-4 h-4 text-[#E5B287]" />
               <span className="hidden md:inline text-xs font-medium max-w-[110px] truncate">
-                {customer ? customer.full_name.split(' ').slice(-2).join(' ') : 'Tài khoản'}
+                {customer ? (customer.role === 'admin' || customer.role === 'staff' ? 'Quản trị' : customer.full_name.split(' ').slice(-2).join(' ')) : 'Tài khoản'}
               </span>
             </Link>
 
@@ -211,12 +211,16 @@ export function MainLayout() {
             ))}
             <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
               <Link
-                to="/account"
+                to={customer && (customer.role === 'admin' || customer.role === 'staff') ? '/admin' : '/account'}
                 onClick={() => setMobileMenuOpen(false)}
                 className="px-3 py-2 text-sm text-[#E5B287] font-semibold flex items-center gap-2"
               >
                 <User className="w-4 h-4" />
-                {customer ? `Tài khoản: ${customer.full_name}` : 'Tài khoản & Đơn hàng của tôi'}
+                {customer && (customer.role === 'admin' || customer.role === 'staff')
+                  ? 'Bảng điều khiển Quản Trị (Admin)'
+                  : customer
+                  ? `Tài khoản: ${customer.full_name}`
+                  : 'Tài khoản & Đơn hàng của tôi'}
               </Link>
               <Link
                 to="/track-order"
