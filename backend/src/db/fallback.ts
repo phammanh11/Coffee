@@ -881,16 +881,49 @@ export function createFallbackD1(): D1Database {
         return [{ revenue: rev }];
       }
       if (lower.includes('group by substr(created_at, 1, 10)')) {
-        return [];
+        const dateMap = new Map<string, { date: string; revenue: number; orders: number }>();
+        for (const ord of mem.orders) {
+          if (ord.status === 'cancelled') continue;
+          const dStr = String(ord.created_at || '').slice(0, 10);
+          if (!dStr) continue;
+          const curr = dateMap.get(dStr) || { date: dStr, revenue: 0, orders: 0 };
+          curr.revenue += Number(ord.total) || 0;
+          curr.orders += 1;
+          dateMap.set(dStr, curr);
+        }
+        return Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       }
       if (lower.includes('p.id as product_id, p.name as product_name')) {
-        return mem.products.slice(0, 5).map((p) => ({
-          product_id: p.id,
-          product_name: p.name,
-          stock: p.stock,
-          total_sold: 0,
-          revenue: 0,
-        }));
+        const soldMap = new Map<number, { sold: number; revenue: number }>();
+        const cancelledOrderIds = new Set(
+          mem.orders.filter((o) => o.status === 'cancelled').map((o) => o.id)
+        );
+
+        for (const item of mem.order_items) {
+          if (cancelledOrderIds.has(item.order_id)) continue;
+          const pid = Number(item.product_id);
+          const curr = soldMap.get(pid) || { sold: 0, revenue: 0 };
+          curr.sold += Number(item.quantity) || 0;
+          curr.revenue += Number(item.line_total) || 0;
+          soldMap.set(pid, curr);
+        }
+
+        const sorted = mem.products.map((p) => {
+          const stats = soldMap.get(p.id) || { sold: 0, revenue: 0 };
+          return {
+            product_id: p.id,
+            product_name: p.name,
+            stock: p.stock,
+            total_sold: stats.sold,
+            revenue: stats.revenue,
+          };
+        }).sort((a, b) => {
+          if (b.total_sold !== a.total_sold) return b.total_sold - a.total_sold;
+          if (b.revenue !== a.revenue) return b.revenue - a.revenue;
+          return a.product_id - b.product_id;
+        });
+
+        return sorted.slice(0, 5);
       }
 
       return [];

@@ -533,6 +533,9 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     expect(json.success).toBe(true);
     expect(json.data.summary.totalRevenue).toBe(288000);
     expect(json.data.summary.totalOrders).toBe(1);
+    expect(json.data.revenueByDay.length).toBeGreaterThan(0);
+    expect(json.data.revenueByDay[0].revenue).toBe(288000);
+    expect(json.data.revenueByDay[0].orders).toBe(1);
     expect(json.data.recentOrders[0].order_code).toBe(createdOrderCode);
   });
 
