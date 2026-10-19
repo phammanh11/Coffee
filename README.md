@@ -41,42 +41,45 @@ Website thương mại điện tử cà phê đặc sản Việt Nam hoàn chỉ
 
 ---
 
-## 4. Cấu Trúc Thư Mục
+## 4. Cấu Trúc Thư Mục (Chia tách rõ ràng `frontend/` và `backend/`)
 ```text
 moc-coffee/
-├── docs/
-│   ├── architecture.md      # Tài liệu kiến trúc hệ thống & luồng tồn kho
-│   ├── api.md               # Danh sách chi tiết Public & Admin APIs
-│   ├── database.md          # Sơ đồ ERD & mô tả 15 bảng Cloudflare D1
-│   └── deployment.md        # Hướng dẫn 21 bước triển khai lên Cloudflare
-├── migrations/
-│   └── 0001_schema.sql      # Schema khởi tạo 15 bảng và chỉ mục trên D1
-├── seeds/
-│   └── seed.sql             # Dữ liệu mẫu môi trường Development
-├── public/
-│   ├── images/              # Hình ảnh thương hiệu & bao bì MỘC Coffee
-│   ├── favicon.svg
-│   ├── robots.txt
-│   └── sitemap.xml
-├── src/
-│   ├── shared/              # Types, hằng số VND, State Machine & Zod Validators
-│   ├── worker/              # Backend HonoJS trên Cloudflare Workers
-│   │   ├── db/init.ts       # Khởi tạo bảng & tài khoản Bootstrap Admin an toàn
-│   │   ├── middleware/      # Xác thực phiên Admin & Rate Limiting
-│   │   ├── utils/           # Web Crypto PBKDF2 & chuẩn hóa JSON response
-│   │   └── index.ts         # Toàn bộ routes /api/v1/*
-│   └── client/              # Ứng dụng ReactJS + TypeScript
-│       ├── components/      # ProductCard, ToastContext, ErrorBoundary
-│       ├── features/cart/   # CartContext đồng bộ giỏ hàng
-│       ├── hooks/           # TanStack Query hooks
-│       ├── layouts/         # MainLayout & AdminLayout
-│       ├── pages/           # 23 trang Khách hàng & Quản trị viên
-│       └── services/api.ts  # Tầng giao tiếp API tách biệt khỏi UI
-├── tests/
-│   └── api.test.ts          # Bộ kiểm thử tích hợp 16 kịch bản nghiệp vụ
-├── .env.example             # Mẫu cấu hình biến môi trường
-├── wrangler.jsonc           # Cấu hình Cloudflare Workers + D1 + R2 + Assets
-├── vite.config.ts           # Cấu hình Vite + Cloudflare Plugin
+├── frontend/                # Toàn bộ mã nguồn Giao diện người dùng & Admin (ReactJS + TypeScript)
+│   ├── public/              # Hình ảnh thương hiệu, favicon, _redirects, _routes.json, robots.txt, sitemap.xml
+│   ├── shared/              # Types, hằng số VND, State Machine & Zod Validators cho Frontend
+│   ├── src/
+│   │   ├── components/      # ProductCard, ToastContext, ErrorBoundary
+│   │   ├── features/        # Quản lý trạng thái (auth/CustomerAuthContext, cart/CartContext)
+│   │   ├── hooks/           # TanStack Query hooks (useQueries.ts)
+│   │   ├── layouts/         # MainLayout & AdminLayout
+│   │   ├── pages/           # Các trang Khách hàng (kể cả /account) & Quản trị viên (/admin/*)
+│   │   ├── services/api.ts  # Tầng giao tiếp API tách biệt khỏi UI
+│   │   ├── App.tsx
+│   │   ├── index.css
+│   │   └── main.tsx
+│   ├── index.html           # HTML gốc của ứng dụng Frontend
+│   └── tsconfig.json
+│
+├── backend/                 # Toàn bộ mã nguồn Server API & Database (HonoJS + Cloudflare Workers + D1 + R2)
+│   ├── migrations/
+│   │   └── 0001_schema.sql  # Schema khởi tạo bảng và chỉ mục trên Cloudflare D1
+│   ├── seeds/
+│   │   └── seed.sql         # Dữ liệu mẫu môi trường Development
+│   ├── shared/              # Types, hằng số VND, State Machine & Zod Validators cho Backend
+│   ├── src/
+│   │   ├── db/              # Kết nối D1, Auto-migration (init.ts) & Edge Cache Fallback (fallback.ts)
+│   │   ├── middleware/      # Xác thực phiên Admin & Khách hàng, Rate Limiting (auth.ts)
+│   │   ├── utils/           # Web Crypto PBKDF2 (crypto.ts) & chuẩn hóa JSON response (response.ts)
+│   │   └── index.ts         # Toàn bộ routes /api/v1/* của HonoJS Worker
+│   ├── tests/
+│   │   └── api.test.ts      # Bộ kiểm thử tích hợp Backend API + D1 + R2
+│   └── tsconfig.json
+│
+├── docs/                    # Tài liệu kiến trúc, API, Database và hướng dẫn Deploy
+├── scripts/
+│   └── build-worker.mjs     # Script đóng gói Worker bundle (dist/_worker.js)
+├── wrangler.jsonc           # Cấu hình Cloudflare Pages / Workers + D1 + R2
+├── vite.config.ts           # Cấu hình Vite cho Frontend & Dev Server tích hợp Backend
 └── package.json
 ```
 

@@ -1,8 +1,13 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Plugin chạy trực tiếp HonoJS Worker (/api/*) trong môi trường Vite Dev Server
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const backendEntryPath = path.resolve(__dirname, 'backend/src/index.ts');
+
+// Plugin chạy trực tiếp HonoJS Worker (/api/*) từ thư mục backend/ trong môi trường Vite Dev Server
 // đồng thời giữ nguyên cấu trúc output chuẩn `dist/index.html` cho Cloudflare Pages khi build.
 function honoLocalDevPlugin(): Plugin {
   return {
@@ -13,7 +18,7 @@ function honoLocalDevPlugin(): Plugin {
           return next();
         }
         try {
-          const mod = await server.ssrLoadModule('/src/worker/index.ts');
+          const mod = await server.ssrLoadModule(backendEntryPath);
           const app = mod.app || mod.default;
 
           const protocol = 'http';
@@ -74,9 +79,11 @@ function honoLocalDevPlugin(): Plugin {
 }
 
 export default defineConfig({
+  root: 'frontend',
+  publicDir: 'public',
   plugins: [react(), tailwindcss(), honoLocalDevPlugin()],
   build: {
-    outDir: 'dist',
+    outDir: '../dist',
     emptyOutDir: true,
   },
 });

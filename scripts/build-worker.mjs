@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 
 await esbuild.build({
-  entryPoints: [path.join(rootDir, 'src/worker/index.ts')],
+  entryPoints: [path.join(rootDir, 'backend/src/index.ts')],
   bundle: true,
   format: 'esm',
   target: 'es2022',
