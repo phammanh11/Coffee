@@ -1896,9 +1896,9 @@ app.patch('/api/v1/admin/products/:id/status', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const isActive = body.is_active ? 1 : 0;
 
-  const existing = await c.env.DB.prepare('SELECT id, name FROM products WHERE id = ?')
+  const existing = await c.env.DB.prepare('SELECT * FROM products WHERE id = ?')
     .bind(id)
-    .first<{ id: number; name: string }>();
+    .first<Product>();
 
   if (!existing) {
     return fail(c, 'NOT_FOUND', 'Không tìm thấy sản phẩm.', 404);

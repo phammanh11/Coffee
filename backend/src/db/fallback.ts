@@ -743,13 +743,9 @@ export function createFallbackD1(): D1Database {
         const ids = bound.map(Number);
         return mem.products.filter((p) => ids.includes(p.id));
       }
-      if (lower.startsWith('select * from products where id = ?')) {
-        const p = mem.products.find((prod) => prod.id === Number(bound[0]));
+      if (lower.includes('from products where id = ?') || lower.includes('from products where id=?')) {
+        const p = mem.products.find((prod) => Number(prod.id) === Number(bound[0]));
         return p ? [p] : [];
-      }
-      if (lower.startsWith('select stock from products where id = ?')) {
-        const p = mem.products.find((prod) => prod.id === Number(bound[0]));
-        return p ? [{ stock: p.stock }] : [];
       }
       if (lower.startsWith('select id from products where')) {
         const slug = bound[0];
@@ -1146,7 +1142,7 @@ export function createFallbackD1(): D1Database {
       // Xóa sản phẩm khỏi database
       if (lower.startsWith('delete from products where id = ?')) {
         const id = Number(bound[0]);
-        mem.products = mem.products.filter((p) => p.id !== id);
+        mem.products = mem.products.filter((p) => Number(p.id) !== id);
         await persistToEdgeCache();
         return { success: true, meta: { changes: 1, last_row_id: id } };
       }
@@ -1154,7 +1150,7 @@ export function createFallbackD1(): D1Database {
       // Ngừng kinh doanh sản phẩm (soft delete khi có đơn hàng)
       if (lower.startsWith('update products set is_active = 0')) {
         const id = Number(bound[0]);
-        const prod = mem.products.find((p) => p.id === id);
+        const prod = mem.products.find((p) => Number(p.id) === id);
         if (prod) {
           prod.is_active = 0;
           prod.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -1167,7 +1163,7 @@ export function createFallbackD1(): D1Database {
       if (lower.startsWith('update products set is_active = ?')) {
         const newStatus = Number(bound[0]);
         const id = Number(bound[1]);
-        const prod = mem.products.find((p) => p.id === id);
+        const prod = mem.products.find((p) => Number(p.id) === id);
         if (prod) {
           prod.is_active = newStatus;
           prod.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -1179,7 +1175,7 @@ export function createFallbackD1(): D1Database {
       // Chỉnh sửa thông tin sản phẩm (Full update)
       if (lower.startsWith('update products set') && lower.includes('category_id = ?')) {
         const id = Number(bound[20]);
-        const prod = mem.products.find((p) => p.id === id);
+        const prod = mem.products.find((p) => Number(p.id) === id);
         if (prod) {
           prod.category_id = Number(bound[0]);
           prod.name = bound[1];
