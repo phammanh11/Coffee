@@ -18,6 +18,7 @@ import {
   UserCheck,
   UserX,
   X,
+  ArrowRight,
   ArrowUpRight,
   ExternalLink,
   CheckCircle2,
@@ -714,11 +715,10 @@ function CustomerDetailModal({
                         <td className="py-2.5 px-3 text-right">
                           <Link
                             to={`/admin/orders/${o.id}`}
+                            onClick={onClose}
                             className="inline-flex items-center gap-1 font-semibold text-[#A65F3B] hover:text-[#8E4F30] hover:underline"
-                            target="_blank"
-                            rel="noreferrer"
                           >
-                            Xem đơn <ArrowUpRight className="w-3 h-3" />
+                            Xem đơn <ArrowRight className="w-3 h-3" />
                           </Link>
                         </td>
                       </tr>

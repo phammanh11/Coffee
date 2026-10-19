@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, CheckCircle2 } from 'lucide-react';
 import { useAdminOrderDetail } from '../../hooks/useQueries';
 import { api } from '../../services/api';
@@ -18,6 +18,7 @@ export default function AdminOrderDetailPage() {
   const orderId = Number(id);
   const { data: order, isLoading } = useAdminOrderDetail(orderId);
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { showToast } = useToast();
 
   const [note, setNote] = useState('');
@@ -61,13 +62,23 @@ export default function AdminOrderDetailPage() {
   return (
     <div className="max-w-5xl space-y-6">
       <div>
-        <Link
-          to="/admin/orders"
-          className="inline-flex items-center gap-1.5 text-xs text-[#777067] hover:text-[#171512] mb-2"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Quay lại danh sách đơn hàng
-        </Link>
+        <div className="flex items-center gap-2 text-xs text-[#777067] mb-2.5">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1 hover:text-[#171512] transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Quay lại</span>
+          </button>
+          <span className="text-[#E6DED3]">/</span>
+          <Link
+            to="/admin/orders"
+            className="hover:text-[#171512] transition-colors"
+          >
+            Danh sách đơn hàng
+          </Link>
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
