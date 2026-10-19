@@ -1129,6 +1129,16 @@ app.post('/api/v1/auth/login', async (c) => {
     maxAge: 30 * 24 * 60 * 60,
   });
 
+  if (userRow.role === 'admin' || userRow.role === 'staff') {
+    setCookie(c, SESSION_COOKIE_NAME, rawToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: 30 * 24 * 60 * 60,
+    });
+  }
+
   const user: CustomerUser = {
     id: userRow.id,
     email: userRow.email,
@@ -1142,19 +1152,30 @@ app.post('/api/v1/auth/login', async (c) => {
     created_at: userRow.created_at,
   };
 
-  return ok(c, { user, token: rawToken }, 'Đăng nhập thành công!');
+  return ok(
+    c,
+    {
+      user,
+      token: rawToken,
+      isAdmin: userRow.role === 'admin' || userRow.role === 'staff',
+      csrf_token: csrfToken,
+    },
+    'Đăng nhập thành công!'
+  );
 });
 
-// Đăng xuất tài khoản khách hàng (POST /api/v1/auth/logout)
+// Đăng xuất tài khoản khách hàng & quản trị (POST /api/v1/auth/logout)
 app.post('/api/v1/auth/logout', async (c) => {
-  const tokenHeader = c.req.header('X-Customer-Token')?.trim();
-  const cookieToken = getCookie(c, CUSTOMER_COOKIE_NAME);
+  const tokenHeader =
+    c.req.header('X-Customer-Token')?.trim() || c.req.header('X-Admin-Token')?.trim();
+  const cookieToken = getCookie(c, CUSTOMER_COOKIE_NAME) || getCookie(c, SESSION_COOKIE_NAME);
   const rawToken = tokenHeader || cookieToken;
   if (rawToken) {
     const tokenHash = await sha256Hex(rawToken);
     await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
   }
   deleteCookie(c, CUSTOMER_COOKIE_NAME, { path: '/' });
+  deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   return ok(c, { loggedOut: true }, 'Đã đăng xuất tài khoản.');
 });
 

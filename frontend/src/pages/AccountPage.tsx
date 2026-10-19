@@ -16,8 +16,17 @@ import {
   ArrowRight,
   Phone,
   Mail,
+  LayoutDashboard,
+  FolderTree,
+  ShoppingCart,
+  FileText,
+  Crown,
+  Shield,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
+import { useAdminDashboard } from '../hooks/useQueries';
 import { api, getLocalCachedOrders } from '../services/api';
 import { useToast } from '../components/ToastContext';
 import { useCart } from '../features/cart/CartContext';
@@ -33,8 +42,9 @@ export default function AccountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'orders';
 
-  const { customer, isLoading: authLoading, login, register, updateProfile, logout } =
+  const { customer, isAdmin, isLoading: authLoading, login, register, updateProfile, logout } =
     useCustomerAuth();
+  const { data: adminKpi } = useAdminDashboard(30);
   const { showToast } = useToast();
   const { openDrawer } = useCart();
 
@@ -162,7 +172,14 @@ export default function AccountPage() {
         identifier: identifier.trim(),
         password: loginPassword,
       });
-      showToast(`Chào mừng ${user.full_name} quay trở lại!`, 'success');
+      if (user.role === 'admin' || user.role === 'staff') {
+        showToast(
+          `Đăng nhập Quản Trị Viên thành công! Toàn bộ tính năng Quản trị (Full Option) đã sẵn sàng.`,
+          'success'
+        );
+      } else {
+        showToast(`Chào mừng ${user.full_name} quay trở lại!`, 'success');
+      }
     } catch (err: any) {
       showToast(err.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.', 'error');
     } finally {
@@ -195,6 +212,12 @@ export default function AccountPage() {
   const fillDemoCustomer = () => {
     setAuthMode('login');
     setIdentifier('0901234567');
+    setLoginPassword('MocCoffee@2026');
+  };
+
+  const fillDemoAdmin = () => {
+    setAuthMode('login');
+    setIdentifier('admin@moccoffee.vn');
     setLoginPassword('MocCoffee@2026');
   };
 
@@ -351,21 +374,41 @@ export default function AccountPage() {
                 </button>
 
                 <div className="pt-4 border-t border-[#E6DED3] space-y-2.5">
-                  <div className="p-3.5 rounded bg-[#F7F2EA] border border-[#E6DED3] flex items-center justify-between gap-3">
+                  <div className="p-3 rounded bg-[#183B2D]/10 border border-[#183B2D]/20 flex items-center justify-between gap-3">
                     <div className="text-xs">
-                      <span className="font-semibold text-[#171512] block">
-                        Dùng thử tài khoản Khách hàng mẫu:
+                      <span className="font-semibold text-[#183B2D] flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5" />
+                        Tài khoản Khách hàng (Quyền giới hạn):
                       </span>
-                      <span className="text-[#777067] font-mono">
-                        SĐT: 0901234567 • MK: MocCoffee@2026
+                      <span className="text-[#555] font-mono text-[11px] block mt-0.5">
+                        SĐT: <strong>0901234567</strong> • MK: <strong>MocCoffee@2026</strong>
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={fillDemoCustomer}
-                      className="px-3 py-1.5 rounded bg-[#A65F3B]/15 hover:bg-[#A65F3B]/25 text-[#4A2E24] text-xs font-semibold shrink-0 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded bg-[#183B2D] hover:bg-[#122C21] text-white text-xs font-semibold shrink-0 cursor-pointer shadow-xs"
                     >
-                      Điền nhanh
+                      Điền ngay
+                    </button>
+                  </div>
+
+                  <div className="p-3 rounded bg-[#A65F3B]/10 border border-[#A65F3B]/25 flex items-center justify-between gap-3">
+                    <div className="text-xs">
+                      <span className="font-semibold text-[#A65F3B] flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5" />
+                        Tài khoản Quản trị viên (Admin - Full Option):
+                      </span>
+                      <span className="text-[#555] font-mono text-[11px] block mt-0.5">
+                        Email: <strong>admin@moccoffee.vn</strong> • MK: <strong>MocCoffee@2026</strong>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fillDemoAdmin}
+                      className="px-2.5 py-1.5 rounded bg-[#A65F3B] hover:bg-[#8E4F30] text-white text-xs font-semibold shrink-0 cursor-pointer shadow-xs"
+                    >
+                      Điền ngay
                     </button>
                   </div>
 
@@ -537,9 +580,7 @@ export default function AccountPage() {
                   Tra cứu nhanh bằng Mã đơn / SĐT
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
-                <Link to="/admin/login" className="text-[#777067] hover:text-[#171512]">
-                  Cổng Quản trị viên →
-                </Link>
+                <span className="text-[#777067]">Hỗ trợ: 1900 6868</span>
               </div>
             </div>
 
@@ -593,61 +634,211 @@ export default function AccountPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
       {/* Top User Banner */}
-      <div className="bg-[#FFFDF9] border border-[#E6DED3] rounded-lg p-6 sm:p-7 mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-[#4A2E24] text-[#E5B287] flex items-center justify-center font-serif-display text-2xl font-bold shrink-0">
-            {customer.full_name.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-serif-display text-2xl font-bold text-[#171512]">
-                {customer.full_name}
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#183B2D]/10 text-[#183B2D]">
-                Thành viên MỘC
-              </span>
+      <div
+        className={`rounded-lg p-6 sm:p-7 mb-8 border transition-all ${
+          isAdmin
+            ? 'bg-[#171512] text-[#FFFDF9] border-[#A65F3B]/40 shadow-xl'
+            : 'bg-[#FFFDF9] text-[#171512] border-[#E6DED3]'
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div
+              className={`w-14 h-14 rounded-full flex items-center justify-center font-serif-display text-2xl font-bold shrink-0 ${
+                isAdmin
+                  ? 'bg-[#A65F3B] text-white ring-2 ring-[#E5B287]'
+                  : 'bg-[#4A2E24] text-[#E5B287]'
+              }`}
+            >
+              {customer.full_name.charAt(0).toUpperCase()}
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-[#777067] mt-1">
-              {customer.phone && (
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1
+                  className={`font-serif-display text-2xl font-bold ${
+                    isAdmin ? 'text-[#FFFDF9]' : 'text-[#171512]'
+                  }`}
+                >
+                  {customer.full_name}
+                </h1>
+                {isAdmin ? (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#A65F3B] text-white flex items-center gap-1.5 shadow-sm">
+                    <Crown className="w-3.5 h-3.5 text-[#FFE3C8]" />
+                    Quản Trị Viên (Full Option)
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#183B2D]/10 text-[#183B2D]">
+                    Thành viên MỘC
+                  </span>
+                )}
+              </div>
+              <div
+                className={`flex flex-wrap items-center gap-4 text-xs mt-1.5 ${
+                  isAdmin ? 'text-[#F7F2EA]/75' : 'text-[#777067]'
+                }`}
+              >
+                {customer.phone && (
+                  <span className="inline-flex items-center gap-1">
+                    <Phone
+                      className={`w-3.5 h-3.5 ${isAdmin ? 'text-[#E5B287]' : 'text-[#A65F3B]'}`}
+                    />
+                    {customer.phone}
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1">
-                  <Phone className="w-3.5 h-3.5 text-[#A65F3B]" />
-                  {customer.phone}
+                  <Mail
+                    className={`w-3.5 h-3.5 ${isAdmin ? 'text-[#E5B287]' : 'text-[#A65F3B]'}`}
+                  />
+                  {customer.email}
                 </span>
-              )}
-              <span className="inline-flex items-center gap-1">
-                <Mail className="w-3.5 h-3.5 text-[#A65F3B]" />
-                {customer.email}
-              </span>
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="px-4 py-2.5 rounded-md bg-[#A65F3B] hover:bg-[#8E4F30] text-[#FFFDF9] text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors"
+              >
+                <LayoutDashboard className="w-4 h-4 text-[#FFE3C8]" />
+                Vào Bảng Điều Khiển Admin (Dashboard) →
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                showToast('Đã đăng xuất tài khoản.');
+              }}
+              className={`px-3.5 py-2 rounded border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                isAdmin
+                  ? 'border-white/20 text-white/80 hover:bg-white/10 hover:text-white'
+                  : 'border-[#E6DED3] hover:bg-[#F7F2EA] text-[#777067] hover:text-[#171512]'
+              }`}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Đăng xuất
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {(customer.role === 'admin' || customer.role === 'staff') && (
+        {/* Admin Live Quick Access Strip */}
+        {isAdmin && (
+          <div className="mt-5 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <Link
               to="/admin"
-              className="px-3.5 py-2 rounded bg-[#183B2D] text-[#FFFDF9] text-xs font-semibold hover:bg-[#122C21]"
+              className="p-3 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex flex-col justify-between"
             >
-              Vào trang Quản trị
+              <span className="text-white/60">Doanh thu (30 ngày)</span>
+              <strong className="text-base text-[#E5B287] font-semibold mt-1">
+                {formatVND(adminKpi?.summary?.totalRevenue ?? 0)}
+              </strong>
             </Link>
-          )}
-          <button
-            type="button"
-            onClick={async () => {
-              await logout();
-              showToast('Đã đăng xuất tài khoản.');
-            }}
-            className="px-3.5 py-2 rounded border border-[#E6DED3] hover:bg-[#F7F2EA] text-xs font-semibold text-[#777067] hover:text-[#171512] inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Đăng xuất
-          </button>
-        </div>
+            <Link
+              to="/admin/orders"
+              className="p-3 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex flex-col justify-between"
+            >
+              <span className="text-white/60">Đơn hàng mới</span>
+              <strong className="text-base text-white font-semibold mt-1">
+                {adminKpi?.summary?.pendingOrders ?? 0} chờ duyệt
+              </strong>
+            </Link>
+            <Link
+              to="/admin/products"
+              className="p-3 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex flex-col justify-between"
+            >
+              <span className="text-white/60">Tồn kho cảnh báo</span>
+              <strong className="text-base text-amber-300 font-semibold mt-1">
+                {adminKpi?.summary?.lowStockCount ?? 0} sản phẩm
+              </strong>
+            </Link>
+            <Link
+              to="/admin/content"
+              className="p-3 rounded bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex flex-col justify-between"
+            >
+              <span className="text-white/60">Người đăng ký tin</span>
+              <strong className="text-base text-emerald-400 font-semibold mt-1">
+                {adminKpi?.summary?.subscribersCount ?? 0} thành viên
+              </strong>
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Sidebar Navigation */}
         <div className="lg:col-span-3 space-y-2">
+          {/* NẾU LÀ ADMIN: HIỂN THỊ ĐẦY ĐỦ CÁC CÔNG CỤ QUẢN TRỊ (FULL OPTION) */}
+          {isAdmin && (
+            <div className="bg-[#FFFDF9] border border-[#A65F3B]/30 rounded-lg p-3 space-y-1.5 shadow-sm mb-4">
+              <div className="px-2 py-1 flex items-center justify-between text-xs font-bold text-[#A65F3B] uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5" />
+                  Quyền Quản Trị Viên
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#A65F3B]/10">Full Option</span>
+              </div>
+              <Link
+                to="/admin"
+                className="flex items-center justify-between px-3 py-2 rounded text-xs font-semibold text-[#171512] hover:bg-[#F7F2EA] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <LayoutDashboard className="w-4 h-4 text-[#A65F3B]" />
+                  Dashboard Doanh Thu
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#777067]" />
+              </Link>
+              <Link
+                to="/admin/orders"
+                className="flex items-center justify-between px-3 py-2 rounded text-xs font-semibold text-[#171512] hover:bg-[#F7F2EA] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-[#A65F3B]" />
+                  Quản lý Đơn Toàn Shop
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#777067]" />
+              </Link>
+              <Link
+                to="/admin/products"
+                className="flex items-center justify-between px-3 py-2 rounded text-xs font-semibold text-[#171512] hover:bg-[#F7F2EA] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Package className="w-4 h-4 text-[#A65F3B]" />
+                  Quản lý Sản Phẩm & Kho
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#777067]" />
+              </Link>
+              <Link
+                to="/admin/categories"
+                className="flex items-center justify-between px-3 py-2 rounded text-xs font-semibold text-[#171512] hover:bg-[#F7F2EA] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <FolderTree className="w-4 h-4 text-[#A65F3B]" />
+                  Quản lý Danh Mục
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#777067]" />
+              </Link>
+              <Link
+                to="/admin/content"
+                className="flex items-center justify-between px-3 py-2 rounded text-xs font-semibold text-[#171512] hover:bg-[#F7F2EA] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#A65F3B]" />
+                  Nội Dung & Tải Ảnh R2
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#777067]" />
+              </Link>
+            </div>
+          )}
+
+          {/* CÁC TAB CÁ NHÂN */}
+          {isAdmin && (
+            <p className="px-2 pt-1 text-[11px] font-bold text-[#777067] uppercase tracking-wider">
+              Tài Khoản Cá Nhân
+            </p>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -706,15 +897,6 @@ export default function AccountPage() {
             <Lock className="w-4 h-4" />
             Đổi mật khẩu
           </button>
-
-          <div className="pt-3">
-            <Link
-              to="/admin/login"
-              className="block px-4 py-2.5 rounded border border-dashed border-[#E6DED3] text-xs text-[#777067] hover:text-[#171512] text-center"
-            >
-              Chuyển sang Cổng Quản trị viên →
-            </Link>
-          </div>
         </div>
 
         {/* Main Content Area */}

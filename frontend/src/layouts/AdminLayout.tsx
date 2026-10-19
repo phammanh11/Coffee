@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAdminMe } from '../hooks/useQueries';
+import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
 import { api } from '../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../components/ToastContext';
@@ -25,35 +26,40 @@ const ADMIN_NAV = [
 ];
 
 export function AdminLayout() {
-  const { data, isLoading, isError } = useAdminMe();
+  const { data, isLoading } = useAdminMe();
+  const { customer, isAdmin, logout: customerLogout } = useCustomerAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#F7F2EA] flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <div className="w-8 h-8 border-2 border-[#4A2E24] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-[#777067]">Đang kiểm tra phiên đăng nhập quản trị...</p>
+  const hasAdminAccess = Boolean(data?.user || isAdmin);
+
+  if (!hasAdminAccess) {
+    if (isLoading) {
+      return (
+        <div className="min-h-screen bg-[#F7F2EA] flex items-center justify-center">
+          <div className="text-center space-y-2">
+            <div className="w-8 h-8 border-2 border-[#4A2E24] border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-sm text-[#777067]">Đang kiểm tra quyền quản trị...</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+    return <Navigate to="/account" replace />;
   }
 
-  if (isError || !data?.user) {
-    return <Navigate to="/admin/login" replace />;
-  }
+  const currentUserEmail = data?.user?.email || customer?.email || 'admin@moccoffee.vn';
 
   const handleLogout = async () => {
     try {
       await api.adminLogout();
+      await customerLogout();
       qc.clear();
-      showToast('Đã đăng xuất khỏi trang quản trị.');
-      navigate('/admin/login');
+      showToast('Đã đăng xuất khỏi phiên quản trị.');
+      navigate('/account');
     } catch {
-      navigate('/admin/login');
+      navigate('/account');
     }
   };
 
@@ -84,7 +90,7 @@ export function AdminLayout() {
           <Link to="/admin" className="font-serif-display text-2xl font-bold text-[#FFFDF9]">
             MỘC <span className="text-[#E5B287] font-normal">Admin</span>
           </Link>
-          <p className="text-xs text-[#F7F2EA]/60 mt-1 truncate">{data.user.email}</p>
+          <p className="text-xs text-[#F7F2EA]/60 mt-1 truncate">{currentUserEmail}</p>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">

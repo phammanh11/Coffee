@@ -114,9 +114,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set('X-Customer-Token', customerToken);
   }
   if (path.startsWith('/api/v1/admin/')) {
-    const adminToken = getSavedAdminToken();
+    const adminToken = getSavedAdminToken() || getSavedCustomerToken();
     if (adminToken && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${adminToken}`);
+    }
+    if (adminToken && !headers.has('X-Admin-Token')) {
+      headers.set('X-Admin-Token', adminToken);
     }
   }
 
@@ -248,11 +251,16 @@ export const api = {
   },
   customerLogin: async (payload: CustomerLoginInput) => {
     await syncLocalOrdersWithServer();
-    const res = await request<{ user: CustomerUser; token: string }>('/api/v1/auth/login', {
+    const res = await request<{ user: CustomerUser; token: string; isAdmin?: boolean }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    if (res.token) setSavedCustomerToken(res.token);
+    if (res.token) {
+      setSavedCustomerToken(res.token);
+      if (res.user.role === 'admin' || res.user.role === 'staff' || res.isAdmin) {
+        setSavedAdminToken(res.token);
+      }
+    }
     return res;
   },
   customerLogout: async () => {
@@ -260,9 +268,19 @@ export const api = {
       method: 'POST',
     }).catch(() => ({ loggedOut: true }));
     setSavedCustomerToken(null);
+    setSavedAdminToken(null);
     return res;
   },
-  customerMe: () => request<{ user: CustomerUser }>('/api/v1/auth/me'),
+  customerMe: async () => {
+    const res = await request<{ user: CustomerUser }>('/api/v1/auth/me');
+    if (res.user.role === 'admin' || res.user.role === 'staff') {
+      const token = getSavedCustomerToken();
+      if (token && !getSavedAdminToken()) {
+        setSavedAdminToken(token);
+      }
+    }
+    return res;
+  },
   updateCustomerProfile: (payload: CustomerProfileInput) =>
     request<{ user: CustomerUser }>('/api/v1/account/profile', {
       method: 'PUT',

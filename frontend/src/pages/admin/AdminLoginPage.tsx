@@ -1,19 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Lock, AlertCircle, ArrowLeft } from 'lucide-react';
 import { api } from '../../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../components/ToastContext';
+import { useAdminMe } from '../../hooks/useQueries';
+import { useCustomerAuth } from '../../features/auth/CustomerAuthContext';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { showToast } = useToast();
+  const { data: adminData } = useAdminMe();
+  const { customer, isAdmin } = useCustomerAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (adminData?.user || isAdmin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [adminData, isAdmin, navigate]);
 
   const isLocalDev =
     typeof window !== 'undefined' &&

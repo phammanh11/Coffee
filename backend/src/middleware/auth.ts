@@ -44,10 +44,13 @@ export function clearLoginAttempts(ip: string): void {
 export async function getAuthenticatedAdmin(
   c: Context<{ Bindings: WorkerEnv; Variables: any }>
 ): Promise<AdminUser | null> {
-  const cookieToken = getCookie(c, SESSION_COOKIE_NAME);
+  const adminCookie = getCookie(c, SESSION_COOKIE_NAME);
+  const customerCookie = getCookie(c, CUSTOMER_COOKIE_NAME);
+  const adminHeader = c.req.header('X-Admin-Token')?.trim();
+  const customerHeader = c.req.header('X-Customer-Token')?.trim();
   const authHeader = c.req.header('Authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
-  const rawToken = cookieToken || bearerToken;
+  const rawToken = adminHeader || adminCookie || customerHeader || customerCookie || bearerToken;
 
   if (!rawToken) return null;
 
@@ -104,10 +107,11 @@ export async function getAuthenticatedCustomer(
   c: Context<{ Bindings: WorkerEnv; Variables: any }>
 ): Promise<CustomerUser | null> {
   const customerHeader = c.req.header('X-Customer-Token')?.trim();
-  const cookieToken = getCookie(c, CUSTOMER_COOKIE_NAME);
+  const adminHeader = c.req.header('X-Admin-Token')?.trim();
+  const cookieToken = getCookie(c, CUSTOMER_COOKIE_NAME) || getCookie(c, SESSION_COOKIE_NAME);
   const authHeader = c.req.header('Authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
-  const rawToken = customerHeader || cookieToken || bearerToken;
+  const rawToken = customerHeader || adminHeader || cookieToken || bearerToken;
 
   if (!rawToken) return null;
 

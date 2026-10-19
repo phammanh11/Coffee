@@ -608,6 +608,76 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     expect(orderChatJson.data.intent).toBe('order_lookup');
     expect(orderChatJson.data.matchedOrders.length).toBe(1);
   });
+
+  it('19. Đăng nhập 1 cổng duy nhất tự động phân quyền Role: Khách hàng bị giới hạn, Admin có Full Option mà không cần đăng nhập lại', async () => {
+    // 1. Admin đăng nhập qua cổng chung /api/v1/auth/login
+    const adminLoginRes = await app.request(
+      '/api/v1/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: 'admin@moccoffee.vn',
+          password: 'StrongPassword#2026',
+        }),
+      },
+      env
+    );
+    expect(adminLoginRes.status).toBe(200);
+    const adminLoginJson = (await adminLoginRes.json()) as any;
+    expect(adminLoginJson.success).toBe(true);
+    expect(adminLoginJson.data.user.role).toBe('admin');
+    expect(adminLoginJson.data.isAdmin).toBe(true);
+
+    const unifiedAdminToken = adminLoginJson.data.token;
+
+    // 2. Với token vừa nhận từ cổng đăng nhập chung, Admin lập tức có quyền truy cập API Admin mà KHÔNG cần đăng nhập lại cổng quản trị
+    const adminDashRes = await app.request(
+      '/api/v1/admin/dashboard',
+      {
+        method: 'GET',
+        headers: {
+          'X-Customer-Token': unifiedAdminToken,
+        },
+      },
+      env
+    );
+    expect(adminDashRes.status).toBe(200);
+    const dashJson = (await adminDashRes.json()) as any;
+    expect(dashJson.success).toBe(true);
+    expect(dashJson.data.summary).toBeDefined();
+
+    // 3. Khách hàng đăng nhập qua cùng cổng /api/v1/auth/login
+    const customerLoginRes = await app.request(
+      '/api/v1/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: '0988776655',
+          password: 'Password123',
+        }),
+      },
+      env
+    );
+    expect(customerLoginRes.status).toBe(200);
+    const custJson = (await customerLoginRes.json()) as any;
+    expect(custJson.data.user.role).toBe('customer');
+    expect(custJson.data.isAdmin).toBe(false);
+
+    // 4. Token của khách hàng bị từ chối khi truy cập API Admin (401 Unauthorized)
+    const unauthorizedRes = await app.request(
+      '/api/v1/admin/dashboard',
+      {
+        method: 'GET',
+        headers: {
+          'X-Customer-Token': custJson.data.token,
+        },
+      },
+      env
+    );
+    expect(unauthorizedRes.status).toBe(401);
+  });
 });
 
 

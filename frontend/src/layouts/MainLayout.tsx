@@ -12,6 +12,7 @@ import {
   Minus,
   ArrowRight,
   PackageSearch,
+  Shield,
 } from 'lucide-react';
 import { useCart } from '../features/cart/CartContext';
 import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
@@ -153,6 +154,17 @@ export function MainLayout() {
               </span>
             </Link>
 
+            {customer && (customer.role === 'admin' || customer.role === 'staff') && (
+              <Link
+                to="/admin"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#183B2D] hover:bg-[#122C21] text-[#FFFDF9] text-xs font-semibold shadow-sm transition-colors border border-[#74C69D]/30"
+                title="Vào Bảng Điều Khiển Quản Trị Viên (Full Option)"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#74C69D]" />
+                <span>Quản trị</span>
+              </Link>
+            )}
+
             <button
               type="button"
               onClick={openDrawer}
@@ -200,6 +212,7 @@ export function MainLayout() {
             <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
               <Link
                 to="/account"
+                onClick={() => setMobileMenuOpen(false)}
                 className="px-3 py-2 text-sm text-[#E5B287] font-semibold flex items-center gap-2"
               >
                 <User className="w-4 h-4" />
@@ -207,18 +220,22 @@ export function MainLayout() {
               </Link>
               <Link
                 to="/track-order"
+                onClick={() => setMobileMenuOpen(false)}
                 className="px-3 py-2 text-sm text-[#F7F2EA]/85 flex items-center gap-2"
               >
                 <PackageSearch className="w-4 h-4" />
                 Tra cứu đơn hàng
               </Link>
-              <Link
-                to="/admin"
-                className="px-3 py-2 text-sm text-[#F7F2EA]/65 flex items-center gap-2"
-              >
-                <User className="w-4 h-4" />
-                Khu vực Quản trị viên
-              </Link>
+              {customer && (customer.role === 'admin' || customer.role === 'staff') && (
+                <Link
+                  to="/admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3 py-2.5 rounded-md bg-[#183B2D] text-[#FFFDF9] text-sm font-semibold flex items-center gap-2 mt-1"
+                >
+                  <Shield className="w-4 h-4 text-[#74C69D]" />
+                  <span>Vào Bảng Điều Khiển Quản Trị (Admin)</span>
+                </Link>
+              )}
             </div>
           </div>
         )}

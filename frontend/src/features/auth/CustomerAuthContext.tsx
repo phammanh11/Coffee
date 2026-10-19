@@ -33,6 +33,7 @@ function saveCachedProfile(user: CustomerUser | null): void {
 
 interface CustomerAuthContextValue {
   customer: CustomerUser | null;
+  isAdmin: boolean;
   isLoading: boolean;
   login: (payload: CustomerLoginInput) => Promise<CustomerUser>;
   register: (payload: CustomerRegisterInput) => Promise<CustomerUser>;
@@ -94,10 +95,13 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     saveCachedProfile(null);
   }, []);
 
+  const isAdmin = Boolean(customer && (customer.role === 'admin' || customer.role === 'staff'));
+
   return (
     <CustomerAuthContext.Provider
       value={{
         customer,
+        isAdmin,
         isLoading,
         login,
         register,
