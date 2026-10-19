@@ -88,7 +88,6 @@ export function CoffeeChatbot() {
   const { showToast } = useToast();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [showWelcomeCallout, setShowWelcomeCallout] = useState(true);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
@@ -126,7 +125,6 @@ export function CoffeeChatbot() {
 
   useEffect(() => {
     if (isOpen) {
-      setShowWelcomeCallout(false);
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         inputRef.current?.focus();
@@ -436,48 +434,22 @@ export function CoffeeChatbot() {
         </div>
       )}
 
-      {/* Bong bóng chào mừng nhỏ gọn khi chưa mở chat */}
-      {!isOpen && showWelcomeCallout && (
-        <div className="mb-2.5 hidden sm:flex items-center gap-2 bg-[#FFFDF9] border border-[#E6DED3] text-[#171512] px-3.5 py-2 rounded-full shadow-lg text-xs">
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            className="flex items-center gap-1.5 font-medium hover:text-[#A65F3B] cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-[#A65F3B]" />
-            <span>Tư vấn chọn vị cà phê & Tra cứu đơn hàng</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowWelcomeCallout(false)}
-            className="text-[#777067] hover:text-[#171512] p-0.5 cursor-pointer"
-            aria-label="Ẩn gợi ý"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Nút bấm mở Chatbot nổi góc phải dưới */}
+      {/* Nút bấm tròn mở Chatbot nổi góc phải dưới */}
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="group flex items-center gap-2.5 px-4 py-3.5 rounded-full bg-[#171512] hover:bg-[#4A2E24] text-[#FFFDF9] shadow-xl border border-[#A65F3B]/40 transition-all duration-200 cursor-pointer"
-        aria-label="Mở trợ lý Barista Chatbot"
+        className="group relative w-14 h-14 rounded-full bg-[#171512] hover:bg-[#4A2E24] text-[#FFFDF9] shadow-2xl border border-[#A65F3B]/50 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+        aria-label={isOpen ? 'Đóng trợ lý Barista' : 'Mở trợ lý Barista Chatbot'}
+        title="Chat với Barista MỘC Coffee"
       >
-        <div className="relative flex items-center justify-center">
-          {isOpen ? (
-            <X className="w-5 h-5 text-[#D89B6C]" />
-          ) : (
-            <MessageCircle className="w-5 h-5 text-[#D89B6C]" />
-          )}
-          {!isOpen && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#171512]" />
-          )}
-        </div>
-        <span className="text-xs sm:text-sm font-semibold tracking-wide">
-          {isOpen ? 'Đóng tư vấn' : 'Chat với Barista'}
-        </span>
+        {isOpen ? (
+          <X className="w-6 h-6 text-[#D89B6C] transition-transform duration-200" />
+        ) : (
+          <>
+            <MessageCircle className="w-6 h-6 text-[#D89B6C] transition-transform duration-200 group-hover:scale-110" />
+            <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#171512]" />
+          </>
+        )}
       </button>
     </div>
   );
