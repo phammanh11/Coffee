@@ -1,0 +1,30 @@
+{
+  // Cấu hình Cloudflare Workers + Static Assets + D1 + R2 cho MỘC Coffee
+  "name": "moc-coffee",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2025-02-14",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "DEFAULT_SHIPPING_FEE": "30000",
+    "FREE_SHIPPING_THRESHOLD": "500000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "moc-coffee-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "moc-coffee-assets"
+    }
+  ]
+}
