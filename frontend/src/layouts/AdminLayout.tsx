@@ -5,6 +5,7 @@ import {
   Package,
   FolderTree,
   ShoppingCart,
+  Users,
   FileText,
   LogOut,
   ExternalLink,
@@ -22,6 +23,7 @@ const ADMIN_NAV = [
   { to: '/admin/products', label: 'Sản phẩm', icon: Package },
   { to: '/admin/categories', label: 'Danh mục', icon: FolderTree },
   { to: '/admin/orders', label: 'Đơn hàng', icon: ShoppingCart },
+  { to: '/admin/customers', label: 'Khách hàng', icon: Users },
   { to: '/admin/content', label: 'Nội dung & R2', icon: FileText },
 ];
 

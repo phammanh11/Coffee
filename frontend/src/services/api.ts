@@ -13,6 +13,8 @@ import type {
   SiteContent,
   ChatRequestPayload,
   ChatResponseData,
+  AdminCustomerItem,
+  AdminCustomerDetail,
 } from '../../shared/types';
 import type {
   CreateOrderInput,
@@ -384,6 +386,30 @@ export const api = {
     request<Order>(`/api/v1/admin/orders/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    }),
+  getAdminCustomers: (params: {
+    page?: number;
+    limit?: number;
+    q?: string;
+    role?: string;
+    status?: string;
+    sort?: string;
+  } = {}) => {
+    const sp = new URLSearchParams();
+    if (params.page) sp.set('page', String(params.page));
+    if (params.limit) sp.set('limit', String(params.limit));
+    if (params.q) sp.set('q', params.q);
+    if (params.role && params.role !== 'all') sp.set('role', params.role);
+    if (params.status && params.status !== 'all') sp.set('status', params.status);
+    if (params.sort) sp.set('sort', params.sort);
+    return request<PaginatedResult<AdminCustomerItem>>(`/api/v1/admin/customers?${sp.toString()}`);
+  },
+  getAdminCustomerById: (id: number) =>
+    request<AdminCustomerDetail>(`/api/v1/admin/customers/${id}`),
+  updateAdminCustomerStatus: (id: number, isActive: boolean) =>
+    request<{ id: number; is_active: number }>(`/api/v1/admin/customers/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: isActive }),
     }),
   uploadImageToR2: (file: File, folder = 'products') => {
     const fd = new FormData();

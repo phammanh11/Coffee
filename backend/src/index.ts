@@ -2186,7 +2186,140 @@ app.patch('/api/v1/admin/orders/:id/status', async (c) => {
   return ok(c, updated, 'Đã cập nhật trạng thái đơn hàng thành công.');
 });
 
-// 21. Admin Upload & Xóa ảnh trên Cloudflare R2
+// 21. Admin Quản lý Danh sách Khách hàng có Phân trang (GET /api/v1/admin/customers)
+app.get('/api/v1/admin/customers', async (c) => {
+  const page = Math.max(1, Number(c.req.query('page')) || 1);
+  const limit = Math.min(100, Math.max(5, Number(c.req.query('limit')) || 15));
+  const offset = (page - 1) * limit;
+  const q = (c.req.query('q') || '').trim().toLowerCase();
+  const role = c.req.query('role');
+  const status = c.req.query('status');
+  const sort = c.req.query('sort') || 'created_desc';
+
+  let whereClause = 'WHERE 1=1';
+  const whereParams: (string | number)[] = [];
+
+  if (q) {
+    whereClause += ' AND (LOWER(u.full_name) LIKE ? OR LOWER(u.email) LIKE ? OR u.phone LIKE ?)';
+    const pat = `%${q}%`;
+    whereParams.push(pat, pat, pat);
+  }
+
+  if (role && role !== 'all') {
+    whereClause += ' AND u.role = ?';
+    whereParams.push(role);
+  }
+
+  if (status && status !== 'all') {
+    whereClause += ' AND u.is_active = ?';
+    whereParams.push(status === 'active' ? 1 : 0);
+  }
+
+  const countSql = `SELECT COUNT(*) as count FROM users u ${whereClause}`;
+  const totalRow = await c.env.DB.prepare(countSql).bind(...whereParams).first<{ count: number }>();
+  const total = totalRow?.count || 0;
+  const totalPages = Math.ceil(total / limit) || 1;
+
+  let orderBy = 'ORDER BY u.created_at DESC, u.id DESC';
+  if (sort === 'created_asc') orderBy = 'ORDER BY u.created_at ASC, u.id ASC';
+  else if (sort === 'orders_desc') orderBy = 'ORDER BY order_count DESC, u.id DESC';
+  else if (sort === 'spent_desc') orderBy = 'ORDER BY total_spent DESC, u.id DESC';
+  else if (sort === 'name_asc') orderBy = 'ORDER BY u.full_name ASC';
+
+  const dataSql = `
+    SELECT u.id, u.email, u.phone, u.full_name, u.role, u.province, u.district, u.ward,
+           u.shipping_address, u.is_active, u.last_login_at, u.created_at, u.updated_at,
+           COUNT(DISTINCT o.id) as order_count,
+           COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.total ELSE 0 END), 0) as total_spent,
+           MAX(o.created_at) as last_order_at
+    FROM users u
+    LEFT JOIN orders o ON (o.user_id = u.id OR o.customer_email = u.email OR (u.phone != '' AND o.customer_phone = u.phone))
+    ${whereClause}
+    GROUP BY u.id
+    ${orderBy}
+    LIMIT ? OFFSET ?
+  `;
+
+  const { results } = await c.env.DB.prepare(dataSql).bind(...whereParams, limit, offset).all();
+
+  return ok(c, {
+    items: results,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+    },
+  });
+});
+
+// 22. Admin Xem Chi tiết Khách hàng & Lịch sử mua hàng (GET /api/v1/admin/customers/:id)
+app.get('/api/v1/admin/customers/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const user = await c.env.DB.prepare(
+    `SELECT id, email, phone, full_name, role, province, district, ward, shipping_address, is_active, last_login_at, created_at, updated_at
+     FROM users WHERE id = ?`
+  ).bind(id).first<any>();
+
+  if (!user) {
+    return fail(c, 'NOT_FOUND', 'Không tìm thấy tài khoản khách hàng.', 404);
+  }
+
+  const { results: orders } = await c.env.DB.prepare(
+    `SELECT id, order_code, total, subtotal, shipping_fee, discount_amount, status, payment_method, payment_status, created_at
+     FROM orders
+     WHERE user_id = ? OR customer_email = ? OR (customer_phone = ? AND customer_phone != '')
+     ORDER BY created_at DESC, id DESC
+     LIMIT 50`
+  ).bind(id, user.email, user.phone || '').all<Order>();
+
+  const totalSpent = orders.filter((o) => o.status !== 'cancelled').reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+  return ok(c, {
+    user,
+    stats: {
+      totalOrders: orders.length,
+      totalSpent,
+      avgOrderValue: orders.length > 0 ? Math.round(totalSpent / orders.length) : 0,
+      latestOrderAt: orders[0]?.created_at || null,
+    },
+    orders,
+  });
+});
+
+// 23. Bật / Tắt trạng thái hoạt động tài khoản khách hàng (PATCH /api/v1/admin/customers/:id/status)
+app.patch('/api/v1/admin/customers/:id/status', async (c) => {
+  const id = Number(c.req.param('id'));
+  const admin = c.get('adminUser') as AdminUser;
+  if (admin && admin.id === id) {
+    return fail(c, 'FORBIDDEN', 'Bạn không thể tự khóa tài khoản quản trị của chính mình.', 400);
+  }
+
+  const existing = await c.env.DB.prepare('SELECT id, full_name, is_active FROM users WHERE id = ?')
+    .bind(id)
+    .first<any>();
+
+  if (!existing) {
+    return fail(c, 'NOT_FOUND', 'Không tìm thấy tài khoản người dùng.', 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const newStatus = body.is_active ? 1 : 0;
+
+  await c.env.DB.prepare("UPDATE users SET is_active = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(newStatus, id)
+    .run();
+
+  return ok(
+    c,
+    { id, is_active: newStatus },
+    newStatus === 1
+      ? `Đã kích hoạt lại tài khoản của khách hàng "${existing.full_name}".`
+      : `Đã tạm khóa tài khoản của khách hàng "${existing.full_name}".`
+  );
+});
+
+// 24. Admin Upload & Xóa ảnh trên Cloudflare R2
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',

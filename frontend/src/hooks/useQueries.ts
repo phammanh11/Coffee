@@ -151,3 +151,37 @@ export function useAdminOrderDetail(id: number) {
     enabled: Boolean(id),
   });
 }
+
+export function useAdminCustomers(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  role?: string;
+  status?: string;
+  sort?: string;
+} = {}) {
+  return useQuery({
+    queryKey: ['adminCustomers', params],
+    queryFn: () => api.getAdminCustomers(params),
+  });
+}
+
+export function useAdminCustomerDetail(id?: number) {
+  return useQuery({
+    queryKey: ['adminCustomerDetail', id],
+    queryFn: () => api.getAdminCustomerById(id!),
+    enabled: Boolean(id),
+  });
+}
+
+export function useUpdateCustomerStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
+      api.updateAdminCustomerStatus(id, isActive),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['adminCustomers'] });
+      qc.invalidateQueries({ queryKey: ['adminCustomerDetail', vars.id] });
+    },
+  });
+}

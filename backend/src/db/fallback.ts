@@ -554,6 +554,294 @@ async function ensureMemAdmin() {
         is_active: 1,
         created_at: '2026-10-19 08:00:00',
         updated_at: '2026-10-19 08:00:00',
+      },
+      {
+        id: 3,
+        email: 'hoangnam@gmail.com',
+        phone: '0903456789',
+        full_name: 'Trần Hoàng Nam',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Hà Nội',
+        district: 'Quận Hoàn Kiếm',
+        ward: 'Phường Tràng Tiền',
+        shipping_address: 'Số 45 Tràng Tiền',
+        is_active: 1,
+        created_at: '2026-10-18 09:30:00',
+        updated_at: '2026-10-18 09:30:00',
+      },
+      {
+        id: 4,
+        email: 'thuha.le@outlook.com',
+        phone: '0912345678',
+        full_name: 'Lê Thu Hà',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Đà Nẵng',
+        district: 'Quận Hải Châu',
+        ward: 'Phường Thạch Thang',
+        shipping_address: 'Số 12 Bạch Đằng',
+        is_active: 1,
+        created_at: '2026-10-17 14:15:00',
+        updated_at: '2026-10-17 14:15:00',
+      },
+      {
+        id: 5,
+        email: 'quocbao.pham@gmail.com',
+        phone: '0988776655',
+        full_name: 'Phạm Quốc Bảo',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Đắk Lắk',
+        district: 'TP. Buôn Ma Thuột',
+        ward: 'Phường Thắng Lợi',
+        shipping_address: 'Số 78 Phan Bội Châu',
+        is_active: 1,
+        created_at: '2026-10-16 11:20:00',
+        updated_at: '2026-10-16 11:20:00',
+      },
+      {
+        id: 6,
+        email: 'maiphuong.vu@yahoo.com',
+        phone: '0934567890',
+        full_name: 'Vũ Mai Phương',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Lâm Đồng',
+        district: 'TP. Đà Lạt',
+        ward: 'Phường 1',
+        shipping_address: 'Số 23 Khu Hòa Bình',
+        is_active: 1,
+        created_at: '2026-10-15 16:40:00',
+        updated_at: '2026-10-15 16:40:00',
+      },
+      {
+        id: 7,
+        email: 'tiendat.dang@gmail.com',
+        phone: '0971234888',
+        full_name: 'Đặng Tiến Đạt',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Cần Thơ',
+        district: 'Quận Ninh Kiều',
+        ward: 'Phường An Phú',
+        shipping_address: 'Số 102 Đường 30/4',
+        is_active: 1,
+        created_at: '2026-10-14 08:50:00',
+        updated_at: '2026-10-14 08:50:00',
+      },
+      {
+        id: 8,
+        email: 'thilan.bui@gmail.com',
+        phone: '0909123999',
+        full_name: 'Bùi Thị Lan',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Hải Phòng',
+        district: 'Quận Hồng Bàng',
+        ward: 'Phường Hoàng Văn Thụ',
+        shipping_address: 'Số 56 Đinh Tiên Hoàng',
+        is_active: 1,
+        created_at: '2026-10-13 10:10:00',
+        updated_at: '2026-10-13 10:10:00',
+      },
+      {
+        id: 9,
+        email: 'vanhung.hoang@gmail.com',
+        phone: '0966554433',
+        full_name: 'Hoàng Văn Hùng',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'TP. Hồ Chí Minh',
+        district: 'Quận Bình Thạnh',
+        ward: 'Phường 25',
+        shipping_address: 'Số 48 Điện Biên Phủ',
+        is_active: 1,
+        created_at: '2026-10-12 15:20:00',
+        updated_at: '2026-10-12 15:20:00',
+      },
+      {
+        id: 10,
+        email: 'thaolinh.do@gmail.com',
+        phone: '0945678123',
+        full_name: 'Đỗ Thảo Linh',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Hà Nội',
+        district: 'Quận Cầu Giấy',
+        ward: 'Phường Dịch Vọng',
+        shipping_address: 'Số 19 Duy Tân',
+        is_active: 1,
+        created_at: '2026-10-11 13:00:00',
+        updated_at: '2026-10-11 13:00:00',
+      },
+      {
+        id: 11,
+        email: 'quanghuy.ngo@gmail.com',
+        phone: '0922334455',
+        full_name: 'Ngô Quang Huy',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Đồng Nai',
+        district: 'TP. Biên Hòa',
+        ward: 'Phường Quyết Thắng',
+        shipping_address: 'Số 15 Võ Thị Sáu',
+        is_active: 1,
+        created_at: '2026-10-10 17:35:00',
+        updated_at: '2026-10-10 17:35:00',
+      },
+      {
+        id: 12,
+        email: 'kimoanh.duong@gmail.com',
+        phone: '0933445566',
+        full_name: 'Dương Kim Oanh',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Bình Dương',
+        district: 'TP. Thủ Dầu Một',
+        ward: 'Phường Phú Cường',
+        shipping_address: 'Số 89 Đại lộ Bình Dương',
+        is_active: 1,
+        created_at: '2026-10-09 09:15:00',
+        updated_at: '2026-10-09 09:15:00',
+      },
+      {
+        id: 13,
+        email: 'trunghieu.phan@gmail.com',
+        phone: '0911223344',
+        full_name: 'Phan Trung Hiếu',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'TP. Hồ Chí Minh',
+        district: 'Quận 7',
+        ward: 'Phường Tân Phong',
+        shipping_address: 'Số 68 Nguyễn Đức Cảnh',
+        is_active: 1,
+        created_at: '2026-10-08 11:45:00',
+        updated_at: '2026-10-08 11:45:00',
+      },
+      {
+        id: 14,
+        email: 'thanhngoc.nguyen@gmail.com',
+        phone: '0981122334',
+        full_name: 'Nguyễn Thanh Ngọc',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Bà Rịa - Vũng Tàu',
+        district: 'TP. Vũng Tàu',
+        ward: 'Phường 1',
+        shipping_address: 'Số 32 Hạ Long',
+        is_active: 0,
+        created_at: '2026-10-07 14:05:00',
+        updated_at: '2026-10-07 14:05:00',
+      },
+      {
+        id: 15,
+        email: 'vietanh.tran@gmail.com',
+        phone: '0977889900',
+        full_name: 'Trần Việt Anh',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Hà Nội',
+        district: 'Quận Đống Đa',
+        ward: 'Phường Láng Hạ',
+        shipping_address: 'Số 91 Thái Hà',
+        is_active: 1,
+        created_at: '2026-10-06 16:30:00',
+        updated_at: '2026-10-06 16:30:00',
+      },
+      {
+        id: 16,
+        email: 'myduyen.lam@gmail.com',
+        phone: '0908877665',
+        full_name: 'Lâm Mỹ Duyên',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Khánh Hòa',
+        district: 'TP. Nha Trang',
+        ward: 'Phường Lộc Thọ',
+        shipping_address: 'Số 55 Trần Phú',
+        is_active: 1,
+        created_at: '2026-10-05 08:20:00',
+        updated_at: '2026-10-05 08:20:00',
+      },
+      {
+        id: 17,
+        email: 'tuanvu.nguyen@gmail.com',
+        phone: '0919988776',
+        full_name: 'Nguyễn Tuấn Vũ',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Thừa Thiên Huế',
+        district: 'TP. Huế',
+        ward: 'Phường Vĩnh Ninh',
+        shipping_address: 'Số 14 Lê Lợi',
+        is_active: 1,
+        created_at: '2026-10-04 10:55:00',
+        updated_at: '2026-10-04 10:55:00',
+      },
+      {
+        id: 18,
+        email: 'nhuquynh.dinh@gmail.com',
+        phone: '0961122888',
+        full_name: 'Đinh Như Quỳnh',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'TP. Hồ Chí Minh',
+        district: 'Quận Phú Nhuận',
+        ward: 'Phường 7',
+        shipping_address: 'Số 29 Phan Xích Long',
+        is_active: 1,
+        created_at: '2026-10-03 15:10:00',
+        updated_at: '2026-10-03 15:10:00',
+      },
+      {
+        id: 19,
+        email: 'huuphuoc.vo@gmail.com',
+        phone: '0937766554',
+        full_name: 'Võ Hữu Phước',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Gia Lai',
+        district: 'TP. Pleiku',
+        ward: 'Phường Diên Hồng',
+        shipping_address: 'Số 61 Hùng Vương',
+        is_active: 1,
+        created_at: '2026-10-02 12:40:00',
+        updated_at: '2026-10-02 12:40:00',
+      },
+      {
+        id: 20,
+        email: 'kimngan.ly@gmail.com',
+        phone: '0903344112',
+        full_name: 'Lý Kim Ngân',
+        password_hash: hash,
+        password_salt: salt,
+        role: 'customer',
+        province: 'Hà Nội',
+        district: 'Quận Hai Bà Trưng',
+        ward: 'Phường Bạch Mai',
+        shipping_address: 'Số 82 Phố Huế',
+        is_active: 1,
+        created_at: '2026-10-01 09:00:00',
+        updated_at: '2026-10-01 09:00:00',
       }
     );
   }
@@ -585,7 +873,29 @@ export function createFallbackD1(): D1Database {
         if (lower.includes("role = 'admin'")) {
           return [{ count: mem.users.filter((u) => u.role === 'admin').length }];
         }
-        return [{ count: mem.users.length }];
+        let filtered = [...mem.users];
+        let boundIdx = 0;
+        if (lower.includes('lower(u.full_name) like ?')) {
+          const pat = String(bound[boundIdx] || '').replace(/%/g, '').toLowerCase();
+          boundIdx += 3;
+          if (pat) {
+            filtered = filtered.filter(
+              (u) =>
+                u.full_name.toLowerCase().includes(pat) ||
+                u.email.toLowerCase().includes(pat) ||
+                (u.phone && u.phone.includes(pat))
+            );
+          }
+        }
+        if (lower.includes('u.role = ?')) {
+          const r = String(bound[boundIdx++] || '');
+          if (r && r !== 'all') filtered = filtered.filter((u) => u.role === r);
+        }
+        if (lower.includes('u.is_active = ?')) {
+          const act = Number(bound[boundIdx++]);
+          filtered = filtered.filter((u) => u.is_active === act);
+        }
+        return [{ count: filtered.length }];
       }
       if (lower.startsWith('select count(*) as count from products')) {
         if (lower.includes('stock <=')) {
@@ -692,6 +1002,95 @@ export function createFallbackD1(): D1Database {
               (phoneParam && user.phone === phoneParam))
         );
         return u ? [u] : [];
+      }
+      if (lower.includes('from users u') && !lower.startsWith('select count(*)')) {
+        let filtered = [...mem.users];
+        let boundIdx = 0;
+        if (lower.includes('lower(u.full_name) like ?')) {
+          const pat = String(bound[boundIdx] || '').replace(/%/g, '').toLowerCase();
+          boundIdx += 3;
+          if (pat) {
+            filtered = filtered.filter(
+              (u) =>
+                u.full_name.toLowerCase().includes(pat) ||
+                u.email.toLowerCase().includes(pat) ||
+                (u.phone && u.phone.includes(pat))
+            );
+          }
+        }
+        if (lower.includes('u.role = ?')) {
+          const r = String(bound[boundIdx++] || '');
+          if (r && r !== 'all') filtered = filtered.filter((u) => u.role === r);
+        }
+        if (lower.includes('u.is_active = ?')) {
+          const act = Number(bound[boundIdx++]);
+          filtered = filtered.filter((u) => u.is_active === act);
+        }
+
+        const withStats = filtered.map((u) => {
+          const userOrders = mem.orders.filter(
+            (o) =>
+              (o.user_id && o.user_id === u.id) ||
+              (o.customer_email && o.customer_email.toLowerCase() === u.email.toLowerCase()) ||
+              (u.phone && o.customer_phone === u.phone)
+          );
+          const nonCancelled = userOrders.filter((o) => o.status !== 'cancelled');
+          const total_spent = nonCancelled.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+          const order_count = nonCancelled.length;
+          const last_order_at = userOrders[0]?.created_at || null;
+          return {
+            id: u.id,
+            email: u.email,
+            phone: u.phone || '',
+            full_name: u.full_name,
+            role: u.role,
+            province: u.province || 'TP. Hồ Chí Minh',
+            district: u.district || '',
+            ward: u.ward || '',
+            shipping_address: u.shipping_address || '',
+            is_active: u.is_active ?? 1,
+            last_login_at: u.last_login_at || null,
+            created_at: u.created_at,
+            updated_at: u.updated_at,
+            order_count,
+            total_spent,
+            last_order_at,
+          };
+        });
+
+        if (lower.includes('order by u.created_at asc')) {
+          withStats.sort((a, b) => a.id - b.id);
+        } else if (lower.includes('order by order_count desc')) {
+          withStats.sort((a, b) => b.order_count - a.order_count);
+        } else if (lower.includes('order by total_spent desc')) {
+          withStats.sort((a, b) => b.total_spent - a.total_spent);
+        } else if (lower.includes('order by u.full_name asc')) {
+          withStats.sort((a, b) => a.full_name.localeCompare(b.full_name, 'vi'));
+        } else {
+          withStats.sort((a, b) => b.id - a.id);
+        }
+
+        const limit = Number(bound[boundIdx++]) || 15;
+        const offset = Number(bound[boundIdx++]) || 0;
+        return withStats.slice(offset, offset + limit);
+      }
+      if (lower.includes('from users where id = ?')) {
+        const u = mem.users.find((user) => user.id === Number(bound[0]));
+        return u ? [u] : [];
+      }
+      if (lower.includes('from orders where user_id = ? or customer_email = ?')) {
+        const uid = Number(bound[0]);
+        const email = String(bound[1] || '').toLowerCase();
+        const phone = String(bound[2] || '').trim();
+        const userOrders = mem.orders
+          .filter(
+            (o) =>
+              (o.user_id && o.user_id === uid) ||
+              (o.customer_email && o.customer_email.toLowerCase() === email) ||
+              (phone && o.customer_phone === phone)
+          )
+          .sort((a, b) => b.id - a.id);
+        return userOrders;
       }
       if (lower.startsWith('select * from users where id = ?')) {
         const u = mem.users.find((user) => user.id === Number(bound[0]));
@@ -969,6 +1368,18 @@ export function createFallbackD1(): D1Database {
           u.district = bound[3];
           u.ward = bound[4];
           u.shipping_address = bound[5];
+          u.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        }
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: u ? 1 : 0, last_row_id: uid } };
+      }
+
+      if (lower.startsWith('update users set is_active =')) {
+        const newStatus = Number(bound[0]);
+        const uid = Number(bound[1]);
+        const u = mem.users.find((user) => user.id === uid);
+        if (u) {
+          u.is_active = newStatus;
           u.updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
         }
         await persistToEdgeCache();

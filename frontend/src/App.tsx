@@ -28,6 +28,7 @@ const AdminProductFormPage = lazy(() => import('./pages/admin/AdminProductFormPa
 const AdminCategoriesPage = lazy(() => import('./pages/admin/AdminCategoriesPage'));
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'));
 const AdminOrderDetailPage = lazy(() => import('./pages/admin/AdminOrderDetailPage'));
+const AdminCustomersPage = lazy(() => import('./pages/admin/AdminCustomersPage'));
 const AdminContentPage = lazy(() => import('./pages/admin/AdminContentPage'));
 
 function PageLoader() {
@@ -72,6 +73,7 @@ export function App() {
           <Route path="categories" element={<AdminCategoriesPage />} />
           <Route path="orders" element={<AdminOrdersPage />} />
           <Route path="orders/:id" element={<AdminOrderDetailPage />} />
+          <Route path="customers" element={<AdminCustomersPage />} />
           <Route path="content" element={<AdminContentPage />} />
         </Route>
       </Routes>

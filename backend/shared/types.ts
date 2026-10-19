@@ -222,6 +222,36 @@ export interface CustomerUser {
   created_at?: string;
 }
 
+export interface AdminCustomerItem {
+  id: number;
+  email: string;
+  phone: string;
+  full_name: string;
+  role: 'customer' | 'admin' | 'staff';
+  province: string;
+  district: string;
+  ward: string;
+  shipping_address: string;
+  is_active: number;
+  last_login_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  order_count: number;
+  total_spent: number;
+  last_order_at?: string | null;
+}
+
+export interface AdminCustomerDetail {
+  user: AdminCustomerItem;
+  stats: {
+    totalOrders: number;
+    totalSpent: number;
+    avgOrderValue: number;
+    latestOrderAt?: string | null;
+  };
+  orders: Order[];
+}
+
 export interface DashboardData {
   summary: {
     totalRevenue: number;
