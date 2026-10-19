@@ -1,30 +1,14 @@
 {
-  // Cấu hình Cloudflare Workers + Static Assets + D1 + R2 cho MỘC Coffee
-  "name": "moc-coffee",
-  "main": "src/worker/index.ts",
+  // Cấu hình chuẩn cho Cloudflare Pages (coffeet1.pages.dev)
+  "name": "coffeet1",
   "compatibility_date": "2025-02-14",
-  "assets": {
-    "directory": "./dist/client",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
-  },
+  "pages_build_output_dir": "./dist",
   "vars": {
     "ENVIRONMENT": "development",
     "DEFAULT_SHIPPING_FEE": "30000",
     "FREE_SHIPPING_THRESHOLD": "500000"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "moc-coffee-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "moc-coffee-assets"
-    }
-  ]
+  }
+  // Khi bạn đã tạo D1 Database & R2 Bucket trong Cloudflare Dashboard:
+  // Bạn có thể gắn trực tiếp trong mục:
+  // Workers & Pages -> coffeet1 -> Settings -> Bindings -> Add D1 database (Biến: DB) & R2 bucket (Biến: BUCKET)
 }

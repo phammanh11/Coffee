@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { ensureDatabaseInitialized, type WorkerEnv } from './db/init';
+import { createFallbackD1, createFallbackR2 } from './db/fallback';
 import { ok, fail } from './utils/response';
 import { generateRandomHex, sha256Hex, verifyPassword } from './utils/crypto';
 import {
@@ -40,9 +41,19 @@ app.use(
   })
 );
 
-// Khởi tạo D1 schema & dữ liệu mẫu môi trường dev
+const fallbackD1 = createFallbackD1();
+const fallbackR2 = createFallbackR2();
+
+// Khởi tạo D1 schema & dữ liệu mẫu môi trường dev (hoặc fallback nếu chưa gắn binding trên Cloudflare Pages)
 app.use('/api/*', async (c, next) => {
-  await ensureDatabaseInitialized(c.env);
+  if (!c.env.DB) {
+    (c.env as any).DB = fallbackD1;
+  } else {
+    await ensureDatabaseInitialized(c.env);
+  }
+  if (!c.env.BUCKET) {
+    (c.env as any).BUCKET = fallbackR2;
+  }
   await next();
 });
 
@@ -1604,6 +1615,14 @@ app.get('/api/v1/admin/newsletter', async (c) => {
     'SELECT * FROM newsletter_subscribers ORDER BY created_at DESC LIMIT 200'
   ).all();
   return ok(c, results);
+});
+
+// Phục vụ SPA Static Assets khi chạy dưới dạng _worker.js trên Cloudflare Pages
+app.all('*', async (c) => {
+  if (c.env?.ASSETS) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return c.text('MỘC Coffee API Worker is running.', 200);
 });
 
 export default app;

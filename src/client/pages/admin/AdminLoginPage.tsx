@@ -109,13 +109,24 @@ export default function AdminLoginPage() {
           </form>
 
           {isLocalDev && (
-            <div className="mt-6 pt-4 border-t border-[#E6DED3] text-xs text-[#777067]">
-              <p className="font-semibold text-[#4A2E24] mb-1">
+            <div className="mt-6 pt-4 border-t border-[#E6DED3] text-xs text-[#777067] space-y-2">
+              <p className="font-semibold text-[#4A2E24]">
                 Chế độ Local Development:
               </p>
-              <p>
-                Tài khoản bootstrap mặc định tại local xem trong tài liệu <code className="font-mono">README.md</code> hoặc biến môi trường <code className="font-mono">ADMIN_BOOTSTRAP_EMAIL</code>.
-              </p>
+              <div className="p-2.5 rounded bg-[#F7F2EA] border border-[#E6DED3] text-[#171512] font-mono text-[11px] space-y-1">
+                <div>Email: <strong>admin@moccoffee.vn</strong></div>
+                <div>Mật khẩu: <strong>MocCoffee@2026</strong></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin@moccoffee.vn');
+                  setPassword('MocCoffee@2026');
+                }}
+                className="w-full py-2 px-3 rounded border border-[#A65F3B] text-[#A65F3B] font-semibold hover:bg-[#A65F3B]/10 transition-colors cursor-pointer"
+              >
+                Điền nhanh tài khoản Admin Local
+              </button>
             </div>
           )}
         </div>
