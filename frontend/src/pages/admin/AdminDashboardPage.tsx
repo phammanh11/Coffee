@@ -34,25 +34,92 @@ export default function AdminDashboardPage() {
     qc.invalidateQueries({ queryKey: ['adminOrders'] });
   };
 
-  const chartData = useMemo(() => {
-    if (!data?.revenueByDay || data.revenueByDay.length === 0) return [];
-    return data.revenueByDay.map((d) => ({
-      date: d.date,
-      displayDate: d.date.length >= 10 ? `${d.date.slice(8, 10)}/${d.date.slice(5, 7)}` : d.date,
-      revenue: Number(d.revenue) || 0,
-      orders: Number(d.orders) || 0,
-    }));
-  }, [data?.revenueByDay]);
+  const DOW_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+  const timelineData = useMemo(() => {
+    const dateMap = new Map<string, { revenue: number; orders: number }>();
+    if (data?.revenueByDay) {
+      for (const d of data.revenueByDay) {
+        dateMap.set(d.date, {
+          revenue: Number(d.revenue) || 0,
+          orders: Number(d.orders) || 0,
+        });
+      }
+    }
+
+    // Xác định mốc thời gian tham chiếu (ngày lớn nhất trong dữ liệu hoặc hôm nay)
+    let refDate = new Date();
+    if (data?.revenueByDay && data.revenueByDay.length > 0) {
+      const parsedTimes = data.revenueByDay
+        .map((d) => {
+          const parts = d.date.split('-');
+          if (parts.length === 3) {
+            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+          }
+          return NaN;
+        })
+        .filter((t) => !isNaN(t));
+
+      if (parsedTimes.length > 0) {
+        const maxTime = Math.max(...parsedTimes);
+        if (maxTime > refDate.getTime()) {
+          refDate = new Date(maxTime);
+        }
+      }
+    }
+
+    // Sinh danh sách liên tục days ngày kết thúc tại refDate
+    const items = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const curr = new Date(refDate);
+      curr.setDate(refDate.getDate() - i);
+      const yyyy = curr.getFullYear();
+      const mm = String(curr.getMonth() + 1).padStart(2, '0');
+      const dd = String(curr.getDate()).padStart(2, '0');
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+      const displayDate = `${dd}/${mm}`;
+      const dayOfWeek = DOW_NAMES[curr.getDay()];
+
+      const match = dateMap.get(dateKey);
+      items.push({
+        date: dateKey,
+        displayDate,
+        dayOfWeek,
+        revenue: match?.revenue ?? 0,
+        orders: match?.orders ?? 0,
+      });
+    }
+
+    return items;
+  }, [data?.revenueByDay, days]);
 
   const maxRevenue = useMemo(() => {
-    if (chartData.length === 0) return 1;
-    return Math.max(1, ...chartData.map((d) => d.revenue));
-  }, [chartData]);
+    const max = Math.max(0, ...timelineData.map((d) => d.revenue));
+    return max > 0 ? max : 500000;
+  }, [timelineData]);
 
   const peakDay = useMemo(() => {
-    if (chartData.length === 0) return null;
-    return [...chartData].sort((a, b) => b.revenue - a.revenue)[0];
-  }, [chartData]);
+    const withRev = timelineData.filter((d) => d.revenue > 0);
+    if (withRev.length === 0) return null;
+    return [...withRev].sort((a, b) => b.revenue - a.revenue)[0];
+  }, [timelineData]);
+
+  const activeDaysCount = useMemo(() => {
+    return timelineData.filter((d) => d.revenue > 0).length;
+  }, [timelineData]);
+
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+
+  const activeItem = useMemo(() => {
+    if (hoveredDate) {
+      const found = timelineData.find((d) => d.date === hoveredDate);
+      if (found) return found;
+    }
+    if (peakDay && peakDay.revenue > 0) return peakDay;
+    const lastWithRev = [...timelineData].reverse().find((d) => d.revenue > 0);
+    if (lastWithRev) return lastWithRev;
+    return timelineData[timelineData.length - 1] || null;
+  }, [hoveredDate, timelineData, peakDay]);
 
   if (isLoading || !data) {
     return (
@@ -108,8 +175,8 @@ export default function AdminDashboardPage() {
           <div className="inline-flex p-1 bg-[#F7F2EA] rounded-lg border border-[#E6DED3]">
             {[
               { label: '7 ngày', value: 7 },
+              { label: '14 ngày', value: 14 },
               { label: '30 ngày', value: 30 },
-              { label: '90 ngày', value: 90 },
             ].map((opt) => (
               <button
                 key={opt.value}
@@ -248,133 +315,278 @@ export default function AdminDashboardPage() {
       {/* ====================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Cột trái: Biểu đồ doanh thu tương tác */}
-        <div className="lg:col-span-7 bg-[#FFFDF9] border border-[#E6DED3] rounded-xl p-6 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+        <div className="lg:col-span-7 bg-[#FFFDF9] border border-[#E6DED3] rounded-xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+          <div className="space-y-4">
+            {/* Header biểu đồ */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h2 className="font-serif-display text-lg sm:text-xl font-bold text-[#171512]">
                   Biểu Đồ Doanh Thu &amp; Số Lượng Đơn
                 </h2>
                 <p className="text-xs text-[#777067] mt-0.5">
-                  Phân tích dòng tiền theo từng ngày giao dịch trong {days} ngày gần nhất
+                  Chuỗi giao dịch liên tục trong {days} ngày gần nhất (cập nhật theo thời gian thực)
                 </p>
               </div>
 
               {peakDay && peakDay.revenue > 0 && (
-                <div className="text-right sm:text-right shrink-0">
-                  <span className="text-[10px] uppercase font-semibold text-[#777067]">
-                    Ngày cao điểm ({peakDay.displayDate}):
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200/80 text-amber-900 shrink-0 self-start sm:self-auto">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-xs font-bold">
+                    Đỉnh: {formatVND(peakDay.revenue)} ({peakDay.displayDate})
                   </span>
-                  <div className="font-bold text-xs text-[#183B2D]">
-                    {formatVND(peakDay.revenue)} ({peakDay.orders} đơn)
-                  </div>
                 </div>
               )}
             </div>
 
-            {chartData.length === 0 ? (
-              <div className="h-64 flex flex-col items-center justify-center text-center p-6 bg-[#F7F2EA]/40 rounded-xl border border-dashed border-[#E6DED3]">
-                <div className="w-12 h-12 rounded-full bg-[#E6DED3]/60 flex items-center justify-center text-[#777067] mb-3">
-                  <Calendar className="w-6 h-6" />
-                </div>
-                <p className="font-semibold text-sm text-[#171512]">
-                  Chưa phát sinh doanh thu trong {days} ngày qua
-                </p>
-                <p className="text-xs text-[#777067] max-w-sm mt-1">
-                  Khi khách hàng đặt hàng hoặc admin tạo đơn mới, biểu đồ cột và số liệu tăng trưởng sẽ được vẽ tự động tại đây.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Vùng vẽ biểu đồ cột hiện đại */}
-                <div className="h-60 pt-8 pb-2 px-2 flex items-end gap-2 sm:gap-3 border-b border-[#E6DED3] overflow-x-auto">
-                  {chartData.map((d) => {
-                    const heightPercent = Math.max(12, Math.round((d.revenue / maxRevenue) * 100));
-                    const isPeak = peakDay?.date === d.date && d.revenue > 0;
-
-                    return (
-                      <div
-                        key={d.date}
-                        className="flex-1 min-w-[38px] flex flex-col items-center gap-2 group relative"
-                      >
-                        {/* Tooltip khi hover */}
-                        <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity absolute -top-12 z-20 bg-[#171512] text-[#FFFDF9] text-[11px] rounded-md px-2 py-1 shadow-lg whitespace-nowrap text-center">
-                          <p className="font-bold text-[#E5B287]">{formatVND(d.revenue)}</p>
-                          <p className="text-[10px] text-stone-300">
-                            {d.date} • {d.orders} đơn
-                          </p>
-                        </div>
-
-                        {/* Nhãn doanh thu trên đầu cột */}
-                        <span className="text-[10px] font-bold text-[#4A2E24] opacity-80 group-hover:opacity-100 transition-opacity whitespace-nowrap truncate max-w-full">
-                          {d.revenue >= 1000000
-                            ? `${(d.revenue / 1000000).toFixed(1)}Tr`
-                            : d.revenue >= 1000
-                            ? `${Math.round(d.revenue / 1000)}k`
-                            : `${d.revenue}đ`}
-                        </span>
-
-                        {/* Cột biểu đồ */}
-                        <div className="w-full h-44 flex items-end justify-center">
-                          <div
-                            style={{ height: `${heightPercent}%` }}
-                            className={`w-full max-w-[34px] rounded-t-md transition-all duration-300 cursor-pointer ${
-                              isPeak
-                                ? 'bg-gradient-to-t from-[#A65F3B] to-[#E5B287] shadow-sm'
-                                : 'bg-[#4A2E24] hover:bg-[#A65F3B]'
-                            }`}
-                          />
-                        </div>
-
-                        {/* Nhãn ngày tháng dưới chân cột */}
-                        <span className="text-[10px] font-medium text-[#777067] group-hover:text-[#171512] transition-colors">
-                          {d.displayDate}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Chú thích biểu đồ */}
-                <div className="flex items-center justify-between text-xs text-[#777067] px-2">
-                  <div className="flex items-center gap-4">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-xs bg-[#4A2E24]" />
-                      Doanh thu hàng ngày
+            {/* Thanh soi chi tiết ngày được chọn / Hover Preview Strip (Không lo bị cắt hay che khuất tooltip) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl bg-[#F7F2EA]/80 border border-[#E6DED3] transition-all">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    activeItem && activeItem.revenue > 0
+                      ? 'bg-emerald-600 ring-4 ring-emerald-100'
+                      : 'bg-stone-300'
+                  }`}
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-[#171512]">
+                      {activeItem ? `${activeItem.dayOfWeek}, ${activeItem.displayDate}` : 'Chọn ngày'}
                     </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-xs bg-gradient-to-t from-[#A65F3B] to-[#E5B287]" />
-                      Ngày đạt doanh thu cao nhất
+                    <span className="text-[11px] text-[#777067] font-mono hidden sm:inline">
+                      ({activeItem?.date})
+                    </span>
+                    {peakDay && activeItem?.date === peakDay.date && activeItem.revenue > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        Đỉnh kỳ
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 sm:gap-6 text-xs">
+                <div>
+                  <span className="text-[#777067] block text-[10px] uppercase font-semibold">Doanh thu</span>
+                  <span className="font-bold text-sm text-[#4A2E24]">
+                    {activeItem ? formatVND(activeItem.revenue) : '0 đ'}
+                  </span>
+                </div>
+                <div className="border-l border-[#E6DED3] pl-3 sm:pl-4">
+                  <span className="text-[#777067] block text-[10px] uppercase font-semibold">Đơn hàng</span>
+                  <span className="font-bold text-sm text-[#183B2D]">
+                    {activeItem?.orders || 0} đơn
+                  </span>
+                </div>
+                {summary.totalRevenue > 0 && (
+                  <div className="border-l border-[#E6DED3] pl-3 sm:pl-4 hidden sm:block">
+                    <span className="text-[#777067] block text-[10px] uppercase font-semibold">Tỷ trọng</span>
+                    <span className="font-bold text-sm text-[#A65F3B]">
+                      {activeItem && activeItem.revenue > 0
+                        ? `${Math.round((activeItem.revenue / summary.totalRevenue) * 100)}%`
+                        : '0%'}
                     </span>
                   </div>
-                  <span>{chartData.length} ngày ghi nhận</span>
+                )}
+              </div>
+            </div>
+
+            {/* Vùng vẽ biểu đồ cột tương tác với Gridlines tham chiếu */}
+            <div className="relative pt-6 pb-2">
+              {/* Gridlines */}
+              <div className="absolute inset-x-0 top-6 bottom-10 flex flex-col justify-between pointer-events-none opacity-40 z-0">
+                <div className="border-b border-dashed border-[#E6DED3] w-full flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[#777067] bg-[#FFFDF9] px-1 -translate-y-2">
+                    {formatVND(maxRevenue)}
+                  </span>
+                </div>
+                <div className="border-b border-dashed border-[#E6DED3] w-full flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[#777067] bg-[#FFFDF9] px-1 -translate-y-2">
+                    {formatVND(Math.round(maxRevenue / 2))}
+                  </span>
+                </div>
+                <div className="border-b border-[#E6DED3] w-full flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[#777067] bg-[#FFFDF9] px-1 -translate-y-2">
+                    0đ
+                  </span>
                 </div>
               </div>
-            )}
+
+              {/* Các cột biểu đồ */}
+              <div
+                className="relative z-10 h-56 flex items-end gap-1 sm:gap-2 px-1 overflow-x-auto"
+                onMouseLeave={() => setHoveredDate(null)}
+              >
+                {timelineData.map((d) => {
+                  const isPeak = peakDay?.date === d.date && d.revenue > 0;
+                  const isSelected = activeItem?.date === d.date;
+                  const hasRevenue = d.revenue > 0;
+                  const heightPercent = hasRevenue
+                    ? Math.max(16, Math.round((d.revenue / maxRevenue) * 100))
+                    : 4;
+
+                  return (
+                    <div
+                      key={d.date}
+                      onMouseEnter={() => setHoveredDate(d.date)}
+                      onClick={() => setHoveredDate(d.date)}
+                      className={`flex-1 min-w-[22px] sm:min-w-[28px] max-w-[52px] h-full flex flex-col items-center justify-end group cursor-pointer transition-all ${
+                        isSelected ? 'scale-[1.02]' : ''
+                      }`}
+                    >
+                      {/* Nhãn doanh thu trên đầu cột (Không bị che khuất) */}
+                      <div className="h-5 flex items-center justify-center mb-1">
+                        {hasRevenue ? (
+                          <span
+                            className={`text-[10px] font-bold transition-all whitespace-nowrap ${
+                              isPeak
+                                ? 'text-[#A65F3B] opacity-100 scale-105'
+                                : isSelected
+                                ? 'text-[#4A2E24] opacity-100'
+                                : days <= 14
+                                ? 'text-[#4A2E24] opacity-80'
+                                : 'text-[#4A2E24] opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            {d.revenue >= 1000000
+                              ? `${(d.revenue / 1000000).toFixed(1)}Tr`
+                              : d.revenue >= 1000
+                              ? `${Math.round(d.revenue / 1000)}k`
+                              : `${d.revenue}đ`}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Cột dữ liệu */}
+                      <div className="w-full h-36 flex items-end justify-center">
+                        <div
+                          style={{ height: `${heightPercent}%` }}
+                          className={`w-full max-w-[32px] rounded-t-md transition-all duration-200 ${
+                            isPeak
+                              ? 'bg-gradient-to-t from-[#A65F3B] to-[#E5B287] shadow-md ring-2 ring-[#E5B287]/40'
+                              : hasRevenue
+                              ? isSelected
+                                ? 'bg-[#A65F3B] shadow-sm'
+                                : 'bg-[#4A2E24] group-hover:bg-[#A65F3B]'
+                              : isSelected
+                              ? 'bg-[#777067] h-2.5 rounded-full'
+                              : 'bg-[#E6DED3] group-hover:bg-[#D4C9BA] rounded-full'
+                          }`}
+                        />
+                      </div>
+
+                      {/* Nhãn ngày tháng dưới chân cột */}
+                      <div className="mt-2 text-center flex flex-col items-center leading-none">
+                        <span
+                          className={`text-[10px] font-medium transition-colors ${
+                            isSelected
+                              ? 'text-[#171512] font-bold'
+                              : 'text-[#777067] group-hover:text-[#171512]'
+                          }`}
+                        >
+                          {d.displayDate}
+                        </span>
+                        <span className="text-[9px] text-[#A8A29E] mt-0.5">
+                          {d.dayOfWeek}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Chú thích biểu đồ */}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#777067] px-2 pt-2">
+              <div className="flex items-center gap-4">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-[#4A2E24]" />
+                  Doanh thu ngày
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-gradient-to-t from-[#A65F3B] to-[#E5B287]" />
+                  Ngày cao điểm
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-[#E6DED3]" />
+                  Chưa có đơn
+                </span>
+              </div>
+              <span className="font-medium text-[#171512]">
+                {activeDaysCount} / {timelineData.length} ngày phát sinh đơn
+              </span>
+            </div>
+          </div>
+
+          {/* 3 Thẻ Metric phụ cân đối khoảng trống bên dưới */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5 mt-5 border-t border-[#E6DED3]">
+            <div className="p-3 rounded-lg bg-[#F7F2EA]/40 border border-[#E6DED3] flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-[#777067]">Doanh thu TB / ngày</span>
+              <div className="mt-1.5">
+                <p className="font-bold text-sm text-[#171512]">
+                  {formatVND(Math.round(summary.totalRevenue / days))}
+                </p>
+                <p className="text-[10px] text-[#777067] mt-0.5">Trong chu kỳ {days} ngày</p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#F7F2EA]/40 border border-[#E6DED3] flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-[#777067]">Ngày doanh thu đỉnh</span>
+              <div className="mt-1.5">
+                <p className="font-bold text-sm text-[#A65F3B]">
+                  {peakDay && peakDay.revenue > 0 ? formatVND(peakDay.revenue) : '0 đ'}
+                </p>
+                <p className="text-[10px] text-[#777067] mt-0.5">
+                  {peakDay && peakDay.revenue > 0
+                    ? `${peakDay.dayOfWeek}, ${peakDay.displayDate} (${peakDay.orders} đơn)`
+                    : 'Chưa có đơn hàng'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#F7F2EA]/40 border border-[#E6DED3] flex flex-col justify-between">
+              <span className="text-[11px] font-semibold text-[#777067]">Hiệu suất chốt đơn</span>
+              <div className="mt-1.5">
+                <p className="font-bold text-sm text-[#183B2D]">
+                  {summary.totalOrders - summary.pendingOrders} / {summary.totalOrders} đơn
+                </p>
+                <p className="text-[10px] text-[#777067] mt-0.5">
+                  Tỷ lệ xử lý: {summary.totalOrders > 0 ? Math.round(((summary.totalOrders - summary.pendingOrders) / summary.totalOrders) * 100) : 0}%
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Cột phải: Sản phẩm bán chạy & Tỷ trọng doanh thu */}
-        <div className="lg:col-span-5 bg-[#FFFDF9] border border-[#E6DED3] rounded-xl p-6 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-[#FFFDF9] border border-[#E6DED3] rounded-xl p-5 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-serif-display text-lg sm:text-xl font-bold text-[#171512]">
-                Sản Phẩm Bán Chạy &amp; Tồn Kho
-              </h2>
+              <div>
+                <h2 className="font-serif-display text-lg sm:text-xl font-bold text-[#171512]">
+                  Sản Phẩm Bán Chạy &amp; Tồn Kho
+                </h2>
+                <p className="text-xs text-[#777067] mt-0.5">
+                  Top mặt hàng cà phê được ưa chuộng nhất
+                </p>
+              </div>
               <Link
                 to="/admin/products"
-                className="text-xs font-semibold text-[#A65F3B] hover:underline inline-flex items-center gap-0.5"
+                className="text-xs font-semibold text-[#A65F3B] hover:underline inline-flex items-center gap-0.5 shrink-0"
               >
                 Quản lý kho <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
 
             {(!topProducts || topProducts.length === 0) ? (
-              <p className="text-xs text-[#777067] py-8 text-center bg-[#F7F2EA]/40 rounded-lg">
-                Chưa có dữ liệu sản phẩm bán chạy.
-              </p>
+              <div className="p-8 text-center bg-[#F7F2EA]/40 rounded-xl border border-dashed border-[#E6DED3] my-4">
+                <Package className="w-8 h-8 text-[#777067] mx-auto mb-2 opacity-60" />
+                <p className="font-semibold text-sm text-[#171512]">Chưa có dữ liệu sản phẩm bán chạy</p>
+                <p className="text-xs text-[#777067] mt-1">Khi khách hàng đặt hàng, bảng xếp hạng sản phẩm bán chạy sẽ hiển thị tại đây.</p>
+              </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {topProducts.map((tp, idx) => {
                   const sharePct =
                     tp.total_sold > 0
@@ -387,7 +599,7 @@ export default function AdminDashboardPage() {
                       className="p-3 rounded-lg border border-[#E6DED3] bg-[#F7F2EA]/30 hover:bg-[#F7F2EA]/60 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-3 mb-1.5">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <span
                             className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${
                               idx === 0
@@ -401,7 +613,7 @@ export default function AdminDashboardPage() {
                           >
                             #{idx + 1}
                           </span>
-                          <p className="font-semibold text-xs sm:text-sm text-[#171512] truncate max-w-[190px]">
+                          <p className="font-semibold text-xs sm:text-sm text-[#171512] truncate">
                             {tp.product_name}
                           </p>
                         </div>
@@ -423,7 +635,7 @@ export default function AdminDashboardPage() {
                           Đã bán: <strong className="text-[#171512]">{tp.total_sold} gói</strong>
                         </span>
                         <span>
-                          Kho: <strong className={tp.stock <= 15 ? 'text-red-700' : 'text-[#183B2D]'}>{tp.stock} gói</strong>
+                          Kho: <strong className={tp.stock <= 15 ? 'text-red-700 font-bold' : 'text-[#183B2D]'}>{tp.stock} gói</strong>
                         </span>
                       </div>
                     </div>
@@ -431,6 +643,20 @@ export default function AdminDashboardPage() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* Hộp tóm tắt kho và doanh thu bổ trợ dưới cùng */}
+          <div className="pt-4 mt-4 border-t border-[#E6DED3] flex items-center justify-between text-xs text-[#777067]">
+            <span className="inline-flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-[#A65F3B]" />
+              Theo dõi biến động kho hàng D1
+            </span>
+            <Link
+              to="/admin/products/new"
+              className="font-semibold text-[#A65F3B] hover:text-[#8E4F30] inline-flex items-center gap-1"
+            >
+              Thêm SP <Plus className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
       </div>
