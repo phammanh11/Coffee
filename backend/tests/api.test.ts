@@ -576,5 +576,38 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     const cancelJson = (await cancelRes.json()) as any;
     expect(cancelJson.data.status).toBe('cancelled');
   });
+
+  it('18. Trợ lý Barista Chatbot tư vấn sản phẩm từ D1 và tra cứu đơn hàng theo SĐT', async () => {
+    const recRes = await app.request(
+      '/api/v1/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Tư vấn cà phê pha Phin đậm đà' }),
+      },
+      env
+    );
+    expect(recRes.status).toBe(200);
+    const recJson = (await recRes.json()) as any;
+    expect(recJson.success).toBe(true);
+    expect(recJson.data.intent).toBe('recommendation');
+    expect(recJson.data.recommendedProducts.length).toBeGreaterThanOrEqual(1);
+
+    const orderChatRes = await app.request(
+      '/api/v1/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Kiểm tra đơn hàng SĐT 0988776655' }),
+      },
+      env
+    );
+    expect(orderChatRes.status).toBe(200);
+    const orderChatJson = (await orderChatRes.json()) as any;
+    expect(orderChatJson.success).toBe(true);
+    expect(orderChatJson.data.intent).toBe('order_lookup');
+    expect(orderChatJson.data.matchedOrders.length).toBe(1);
+  });
 });
+
 

@@ -5,6 +5,7 @@ import { ensureDatabaseInitialized, type WorkerEnv } from './db/init';
 import { createFallbackD1, createFallbackR2 } from './db/fallback';
 import { ok, fail } from './utils/response';
 import { generateRandomHex, sha256Hex, hashPassword, verifyPassword } from './utils/crypto';
+import { handleBaristaChat } from './utils/chatbot';
 import {
   SESSION_COOKIE_NAME,
   CUSTOMER_COOKIE_NAME,
@@ -870,6 +871,25 @@ app.post('/api/v1/orders/sync', async (c) => {
   }
 
   return ok(c, { syncedCount });
+});
+
+// 13. Trợ lý Barista Chatbot thông minh (POST /api/v1/chat)
+app.post('/api/v1/chat', async (c) => {
+  let body: { message?: string; history?: any[] } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return fail(c, 'INVALID_JSON', 'Dữ liệu tin nhắn không hợp lệ.', 400);
+  }
+
+  const rawMessage = (body.message || '').trim();
+  if (!rawMessage) {
+    return fail(c, 'EMPTY_MESSAGE', 'Vui lòng nhập nội dung câu hỏi cho Barista.', 400);
+  }
+
+  const history = Array.isArray(body.history) ? body.history : [];
+  const chatRes = await handleBaristaChat(c, rawMessage, history);
+  return ok(c, chatRes);
 });
 
 // ============================================================================

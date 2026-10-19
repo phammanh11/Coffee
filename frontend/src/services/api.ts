@@ -11,6 +11,8 @@ import type {
   DashboardData,
   Banner,
   SiteContent,
+  ChatRequestPayload,
+  ChatResponseData,
 } from '../../shared/types';
 import type {
   CreateOrderInput,
@@ -226,6 +228,13 @@ export const api = {
         body: JSON.stringify({ email, honeypot }),
       }
     ),
+  chatWithBarista: async (payload: ChatRequestPayload) => {
+    await syncLocalOrdersWithServer();
+    return request<ChatResponseData>('/api/v1/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 
   // Customer Account endpoints
   customerRegister: async (payload: CustomerRegisterInput) => {

@@ -261,3 +261,29 @@ export interface CartItem {
   quantity: number;
   stock: number;
 }
+
+export interface ChatHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatRequestPayload {
+  message: string;
+  history?: ChatHistoryItem[];
+}
+
+export interface ChatResponseData {
+  reply: string;
+  intent:
+    | 'recommendation'
+    | 'order_lookup'
+    | 'brewing_guide'
+    | 'shipping_policy'
+    | 'brand_story'
+    | 'greeting'
+    | 'general';
+  recommendedProducts?: Product[];
+  matchedOrders?: Order[];
+  suggestions: string[];
+}
+

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../features/cart/CartContext';
 import { useCustomerAuth } from '../features/auth/CustomerAuthContext';
+import { CoffeeChatbot } from '../components/CoffeeChatbot';
 import { formatVND } from '../../shared/constants';
 
 const NAV_LINKS = [
@@ -573,6 +574,9 @@ export function MainLayout() {
           </div>
         </div>
       </footer>
+
+      {/* Trợ lý Barista Chatbot nổi toàn trang */}
+      <CoffeeChatbot />
     </div>
   );
 }
