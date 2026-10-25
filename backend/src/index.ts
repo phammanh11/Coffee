@@ -1294,6 +1294,7 @@ app.put('/api/v1/account/password', async (c) => {
 
 // Lấy toàn bộ danh sách đơn hàng của khách hàng (GET /api/v1/account/orders)
 app.get('/api/v1/account/orders', async (c) => {
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   const customer = c.get('customerUser');
 
   // Đảm bảo mọi đơn hàng trùng SĐT hoặc Email đều được gắn user_id
@@ -1331,6 +1332,7 @@ app.get('/api/v1/account/orders', async (c) => {
 
 // Khách hàng tự hủy đơn hàng khi đơn còn ở trạng thái 'pending' (POST /api/v1/account/orders/:id/cancel)
 app.post('/api/v1/account/orders/:id/cancel', async (c) => {
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   const customer = c.get('customerUser');
   const orderId = Number(c.req.param('id'));
   const body = await c.req.json().catch(() => ({}));

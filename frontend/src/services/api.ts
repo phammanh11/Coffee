@@ -129,6 +129,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers,
     credentials: 'include',
+    cache: (!options.method || options.method.toUpperCase() === 'GET') ? 'no-store' : undefined,
   });
 
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
@@ -301,11 +302,16 @@ export const api = {
     }
     return orders;
   },
-  cancelCustomerOrder: (id: number, reason?: string) =>
-    request<Order>(`/api/v1/account/orders/${id}/cancel`, {
+  cancelCustomerOrder: async (id: number, reason?: string) => {
+    const updated = await request<Order>(`/api/v1/account/orders/${id}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
-    }),
+    });
+    if (updated) {
+      saveOrderToLocalCache(updated);
+    }
+    return updated;
+  },
 
   // Admin endpoints
   adminLogin: async (email: string, password: string) => {
