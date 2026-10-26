@@ -7,8 +7,18 @@
     "ENVIRONMENT": "development",
     "DEFAULT_SHIPPING_FEE": "30000",
     "FREE_SHIPPING_THRESHOLD": "500000"
-  }
-  // Khi bạn đã tạo D1 Database & R2 Bucket trong Cloudflare Dashboard:
-  // Bạn có thể gắn trực tiếp trong mục:
-  // Workers & Pages -> coffeet1 -> Settings -> Bindings -> Add D1 database (Biến: DB) & R2 bucket (Biến: BUCKET)
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "moc-coffee-db",
+      "database_id": "5f8f3bde-67f5-46f8-94d5-745ea375393b"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "moc-coffee-assets"
+    }
+  ]
 }
