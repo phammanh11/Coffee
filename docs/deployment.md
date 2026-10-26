@@ -42,8 +42,13 @@ Mở tệp `wrangler.jsonc` và thay thế giá trị `REPLACE_WITH_YOUR_D1_DATA
   {
     "binding": "DB",
     "database_name": "moc-coffee-db",
-    "database_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "migrations_dir": "migrations"
+    "database_id": "5f8f3bde-67f5-46f8-94d5-745ea375393b"
+  }
+],
+"r2_buckets": [
+  {
+    "binding": "BUCKET",
+    "bucket_name": "moc-coffee-assets"
   }
 ]
 ```
