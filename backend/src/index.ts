@@ -7,6 +7,12 @@ import { ok, fail } from './utils/response';
 import { generateRandomHex, sha256Hex, hashPassword, verifyPassword } from './utils/crypto';
 import { handleBaristaChat } from './utils/chatbot';
 import {
+  indexKnowledgeBaseToVectorDB,
+  searchVectorDB,
+  DEFAULT_CF_EMBEDDING_MODEL,
+  DEFAULT_CF_LLM_MODEL,
+} from './utils/rag';
+import {
   SESSION_COOKIE_NAME,
   CUSTOMER_COOKIE_NAME,
   checkLoginRateLimit,
@@ -890,6 +896,42 @@ app.post('/api/v1/chat', async (c) => {
   const history = Array.isArray(body.history) ? body.history : [];
   const chatRes = await handleBaristaChat(c, rawMessage, history);
   return ok(c, chatRes);
+});
+
+// 13b. Xem trạng thái RAG Vector DB & danh sách Chunks đã được nhúng (GET /api/v1/chat/rag-status)
+app.get('/api/v1/chat/rag-status', async (c) => {
+  const { results: products } = await c.env.DB.prepare(
+    'SELECT * FROM products WHERE is_active = 1 ORDER BY is_featured DESC, id ASC'
+  ).all<Product>();
+
+  const status = await indexKnowledgeBaseToVectorDB(c.env, products, false);
+  const { results: chunks } = await c.env.DB.prepare(
+    'SELECT id, chunk_key, category, title, content, product_slug, embedding_model, embedding_dim, updated_at FROM rag_chunks'
+  ).all();
+
+  return ok(c, {
+    pipeline: 'Chunking -> Word Embedding -> Vector DB -> Workers AI LLM',
+    embeddingModel: c.env.CF_EMBEDDING_MODEL || DEFAULT_CF_EMBEDDING_MODEL,
+    llmModel: c.env.CF_LLM_MODEL || DEFAULT_CF_LLM_MODEL,
+    workersAiConnected: Boolean(c.env.AI),
+    vectorBackend: status.vectorBackend,
+    totalChunksIndexed: chunks.length,
+    chunks,
+  });
+});
+
+// 13c. Admin/Dev kích hoạt Re-index toàn bộ Knowledge Base + Sản phẩm vào Vector DB (POST /api/v1/chat/rag-index)
+app.post('/api/v1/chat/rag-index', async (c) => {
+  const { results: products } = await c.env.DB.prepare(
+    'SELECT * FROM products WHERE is_active = 1 ORDER BY is_featured DESC, id ASC'
+  ).all<Product>();
+
+  const indexed = await indexKnowledgeBaseToVectorDB(c.env, products, true);
+  return ok(
+    c,
+    indexed,
+    `Đã thực hiện Chunking, Word Embedding (${indexed.embeddingModel}) và lưu ${indexed.totalChunks} chunks vào Vector DB.`
+  );
 });
 
 // ============================================================================

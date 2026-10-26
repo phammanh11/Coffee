@@ -737,6 +737,78 @@ describe('MỘC Coffee Full-Stack HonoJS + D1 + R2 Integration Suite', () => {
     );
     expect(unauthorizedRes.status).toBe(401);
   });
+
+  it('20. RAG Pipeline (Chunking -> Word Embedding -> Vector DB -> Cloudflare Workers AI LLM) hoạt động chuẩn xác', async () => {
+    // 1. Kiểm tra trạng thái Vector DB và số lượng chunks được tự động Chunking & Embedding vào bảng rag_chunks
+    const statusRes = await app.request('/api/v1/chat/rag-status', { method: 'GET' }, env);
+    expect(statusRes.status).toBe(200);
+    const statusJson = (await statusRes.json()) as any;
+    expect(statusJson.success).toBe(true);
+    expect(statusJson.data.totalChunksIndexed).toBeGreaterThanOrEqual(10);
+    expect(statusJson.data.chunks.length).toBeGreaterThanOrEqual(10);
+
+    // 2. Truy vấn về Chính sách & Quyền lợi (nằm trong Knowledge Base mới nâng cấp)
+    const policyChatRes = await app.request(
+      '/api/v1/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Cho mình hỏi quyền lợi khách hàng và chính sách đổi trả 7 ngày của MỘC Coffee?',
+        }),
+      },
+      env
+    );
+    expect(policyChatRes.status).toBe(200);
+    const policyJson = (await policyChatRes.json()) as any;
+    expect(policyJson.success).toBe(true);
+    expect(policyJson.data.rag).toBeDefined();
+    expect(policyJson.data.rag.totalChunksIndexed).toBeGreaterThanOrEqual(10);
+    expect(policyJson.data.rag.topChunks.length).toBeGreaterThanOrEqual(1);
+    expect(policyJson.data.reply).toContain('7 ngày');
+
+    // 3. Kiểm thử tích hợp trực tiếp Cloudflare Workers AI binding (env.AI.run với @cf/baai/bge-m3 & @cf/meta/llama-3.3-70b-instruct-fp8-fast)
+    const aiCalls: string[] = [];
+    const envWithWorkersAI: WorkerEnv = {
+      ...env,
+      CF_EMBEDDING_MODEL: '@cf/baai/bge-m3',
+      CF_LLM_MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      AI: {
+        async run(model: string, input: any) {
+          aiCalls.push(model);
+          if (model.includes('bge')) {
+            const texts: string[] = Array.isArray(input.text) ? input.text : [input.text];
+            return {
+              data: texts.map(() => Array.from({ length: 64 }, (_, i) => (i === 0 ? 1 : 0.1))),
+            };
+          }
+          return {
+            response:
+              'Dựa trên Knowledge Base của **MỘC Coffee**, lợi thế cạnh tranh cốt lõi là **100% hạt chín đỏ**, rang mộc mẻ nhỏ (**Small-batch**) và **xay tươi miễn phí** 5 cấp độ.',
+          };
+        },
+      },
+    };
+
+    const workersAiChatRes = await app.request(
+      '/api/v1/chat',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Lợi thế cạnh tranh của MỘC Coffee là gì?',
+        }),
+      },
+      envWithWorkersAI
+    );
+    expect(workersAiChatRes.status).toBe(200);
+    const workersAiJson = (await workersAiChatRes.json()) as any;
+    expect(workersAiJson.success).toBe(true);
+    expect(workersAiJson.data.rag.llmModel).toContain('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+    expect(workersAiJson.data.reply).toContain('Small-batch');
+    expect(aiCalls).toContain('@cf/baai/bge-m3');
+    expect(aiCalls).toContain('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  });
 });
 
 

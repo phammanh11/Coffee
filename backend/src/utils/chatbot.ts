@@ -6,9 +6,15 @@ import type {
   CustomerUser,
   Order,
   Product,
+  RagTraceInfo,
 } from '../../shared/types';
 import { formatVND, ORDER_STATUS_LABELS } from '../../shared/constants';
 import { getAuthenticatedCustomer } from '../middleware/auth';
+import {
+  searchVectorDB,
+  generateRagLLMResponse,
+  DEFAULT_CF_LLM_MODEL,
+} from './rag';
 
 function normalizeVi(text: string): string {
   return text.toLowerCase().trim();
@@ -33,7 +39,30 @@ export async function handleBaristaChat(
   const shippingFee = Number(c.env.DEFAULT_SHIPPING_FEE || 30000);
   const freeThreshold = Number(c.env.FREE_SHIPPING_THRESHOLD || 500000);
 
-  // 2. Kiểm tra xem tin nhắn có chứa Mã đơn hàng (MOC-...) hoặc Số điện thoại (09xxxxxxxx) hoặc hỏi về đơn hàng không
+  // 2. Thực thi quy trình RAG: Chunking -> Word Embedding (@cf/baai/bge-m3) -> Vector DB Search
+  const ragSearchResult = await searchVectorDB(c.env, message, products, 4);
+
+  const buildRagTrace = (llmModelUsed: string): RagTraceInfo => ({
+    pipeline: 'chunking -> word_embedding -> vector_db -> llm',
+    embeddingModel: ragSearchResult.embeddingModel,
+    llmModel: llmModelUsed,
+    vectorBackend: ragSearchResult.vectorBackend,
+    totalChunksIndexed: ragSearchResult.totalChunksIndexed,
+    topChunks: ragSearchResult.topChunks,
+  });
+
+  // Lọc danh sách sản phẩm gợi ý trực tiếp từ các Chunk có độ tương đồng Vector cao nhất
+  const ragMatchedProducts: Product[] = [];
+  for (const chunk of ragSearchResult.topChunks) {
+    if (chunk.product_slug) {
+      const found = products.find((p) => p.slug === chunk.product_slug);
+      if (found && !ragMatchedProducts.some((x) => x.id === found.id)) {
+        ragMatchedProducts.push(found);
+      }
+    }
+  }
+
+  // 3. Kiểm tra xem tin nhắn có chứa Mã đơn hàng (MOC-...) hoặc Số điện thoại (09xxxxxxxx) hoặc hỏi về đơn hàng không
   const orderCodeMatch = message.toUpperCase().match(/MOC-[A-Z0-9]{4,10}-[A-Z0-9]{3,6}/);
   const phoneMatch = message.replace(/[\s.-]/g, '').match(/(0[35789][0-9]{8})/);
   const isAskingOrder =
@@ -106,13 +135,13 @@ export async function handleBaristaChat(
         matchedOrders,
         suggestions: [
           '☕ Tư vấn thêm cà phê ngon',
-          '🚚 Chính sách giao hàng',
+          '🚚 Chính sách giao hàng & quyền lợi',
           '📖 Hướng dẫn pha Phin chuẩn vị',
         ],
+        rag: buildRagTrace('d1-sql-order-engine'),
       };
     }
 
-    // Nếu hỏi về đơn hàng nhưng chưa cung cấp mã hoặc SĐT (hoặc không tìm thấy)
     if (orderCodeMatch || phoneMatch) {
       return {
         reply: `Mình chưa tìm thấy đơn hàng nào khớp với thông tin **${orderCodeMatch?.[0] || phoneMatch?.[1]}** trên hệ thống. Bạn vui lòng kiểm tra lại **Số điện thoại đặt hàng** hoặc **Mã đơn (MOC-...)** giúp mình nhé!`,
@@ -122,6 +151,7 @@ export async function handleBaristaChat(
           '☕ Tư vấn chọn cà phê hợp gu',
           '📞 Thông tin liên hệ MỘC Coffee',
         ],
+        rag: buildRagTrace('d1-sql-order-engine'),
       };
     }
 
@@ -132,28 +162,93 @@ export async function handleBaristaChat(
       suggestions: [
         '0901234567',
         '☕ Tư vấn chọn cà phê hợp gu',
-        '🚚 Phí vận chuyển tính thế nào?',
+        '🚚 Phí vận chuyển & Quyền lợi đổi trả',
       ],
+      rag: buildRagTrace('d1-sql-order-engine'),
     };
   }
 
-  // 3. Kiểm tra câu hỏi về Hướng dẫn pha chế / Bảo quản (chỉ khi người dùng hỏi cách pha / công thức / bảo quản)
-  if (
+  // 4. Phân loại Intent dựa trên câu hỏi & kết quả truy xuất Vector DB
+  const isAskingBrewing =
     !/(tư vấn|chọn|gợi ý|mua|loại nào)/i.test(q) &&
-    /(cách pha|hướng dẫn|công thức|tỷ lệ pha|nhiệt độ nước|cách ủ|bảo quản|giữ hương)/i.test(q)
-  ) {
+    /(cách pha|hướng dẫn|công thức|tỷ lệ pha|nhiệt độ nước|cách ủ|bảo quản|giữ hương)/i.test(q);
+
+  const isAskingPolicyOrBenefit =
+    /(phí ship|giao hàng|vận chuyển|freeship|miễn phí ship|bao lâu nhận|thanh toán|chuyển khoản|cod|đổi trả|hoàn tiền|quyền lợi|đồng kiểm|hủy đơn|bảo mật)/i.test(
+      q
+    );
+
+  const isAskingBrandOrAdvantage =
+    /(nguồn gốc|nông trại|vùng trồng|câu chuyện|mộc coffee là|địa chỉ|hotline|liên hệ|số điện thoại shop|ở đâu|lợi thế|ưu điểm|khác biệt|rang mộc là gì)/i.test(
+      q
+    );
+
+  const isAskingRecommendation =
+    /(tư vấn|chọn|loại nào|ngon|đậm|mạnh|sữa đá|đen đá|phin|chua|thơm|arabica|robusta|espresso|pha máy|blend|quà|biếu|giá|menu|sản phẩm|mua|gợi ý|ít cafein|say cà phê|sơn la|đắk nông|honey)/i.test(
+      q
+    );
+
+  let detectedIntent: ChatResponseData['intent'] = 'general';
+  if (isAskingBrewing) detectedIntent = 'brewing_guide';
+  else if (isAskingPolicyOrBenefit) detectedIntent = 'shipping_policy';
+  else if (isAskingBrandOrAdvantage) detectedIntent = 'brand_story';
+  else if (isAskingRecommendation) detectedIntent = 'recommendation';
+
+  // 5. GỌI CLOUDFLARE WORKERS AI LLM (hoặc Gemini 2.5 Flash) VỚI NGỮ CẢNH ĐÃ TRUY XUẤT TỪ VECTOR DB
+  const llmRes = await generateRagLLMResponse(
+    c.env,
+    message,
+    history,
+    ragSearchResult.topChunks,
+    shippingFee,
+    freeThreshold,
+    customer?.full_name
+  );
+
+  // Nếu Workers AI LLM (hoặc Gemini) trả về câu trả lời thành công, kết hợp ngay với thẻ sản phẩm và RAG trace
+  if (llmRes.reply) {
+    const recommended =
+      ragMatchedProducts.length > 0 ? ragMatchedProducts.slice(0, 3) : products.slice(0, 2);
+
+    return {
+      reply: llmRes.reply,
+      intent: detectedIntent === 'general' && ragMatchedProducts.length > 0 ? 'recommendation' : detectedIntent,
+      recommendedProducts:
+        detectedIntent === 'shipping_policy' ? [] : recommended,
+      suggestions: [
+        '🫖 Tư vấn cà phê pha Phin đậm đà',
+        '🌸 Cà phê Arabica thơm hương hoa quả',
+        '🛡️ Quyền lợi & Chính sách đổi trả',
+        '📦 Kiểm tra đơn hàng của tôi',
+      ],
+      rag: buildRagTrace(llmRes.llmModelUsed),
+    };
+  }
+
+  // ============================================================================
+  // 6. BỘ TỔNG HỢP TRI THỨC NỘI BỘ (KHI CHẠY LOCAL CHƯA KẾT NỐI CLOUDFLARE AI)
+  // Vẫn đính kèm đầy đủ thông tin `rag` (Top Chunks từ Vector DB) và dữ liệu Knowledge Base
+  // ============================================================================
+  const synthModelName = `${c.env.CF_LLM_MODEL || DEFAULT_CF_LLM_MODEL} (rag-synthesizer)`;
+
+  // 6.1. Hướng dẫn pha chế / Bảo quản
+  if (isAskingBrewing) {
     if (/(cold brew|ủ lạnh)/i.test(q)) {
-      const arabica = products.find((p) => p.slug.includes('arabica')) || products[0];
+      const coldBrewProd =
+        products.find((p) => p.slug.includes('cold-brew')) ||
+        products.find((p) => p.slug.includes('arabica')) ||
+        products[0];
       return {
         reply:
-          '✨ **Công thức ủ Cold Brew thanh mát chuẩn Barista MỘC Coffee:**\n\n1. **Chọn hạt & Cỡ xay:** Dùng hạt **Arabica Cầu Đất** xay thô (cỡ hạt đường kính lớn).\n2. **Tỷ lệ vàng 1:10:** 50g cà phê + 500ml nước lọc mát.\n3. **Thời gian ủ:** Khuấy nhẹ cho thấm đều, đậy kín và ủ trong ngăn mát tủ lạnh **16 – 20 tiếng**.\n4. **Thưởng thức:** Lọc qua giấy lọc, thêm đá hoặc một lát cam vàng / mật ong rừng cực kỳ cuốn!',
+          '✨ **Công thức ủ Cold Brew thanh mát chuẩn Barista MỘC Coffee:**\n\n1. **Chọn hạt & Cỡ xay:** Dùng **Cold Brew Signature Blend** hoặc **Arabica Cầu Đất** xay thô (cỡ hạt đường kính lớn).\n2. **Tỷ lệ vàng 1:10:** 50g cà phê + 500ml nước lọc mát.\n3. **Thời gian ủ:** Khuấy nhẹ cho thấm đều, đậy kín và ủ trong ngăn mát tủ lạnh **16 – 20 tiếng**.\n4. **Thưởng thức:** Lọc qua giấy lọc, thêm đá hoặc một lát cam vàng / mật ong rừng cực kỳ cuốn!',
         intent: 'brewing_guide',
-        recommendedProducts: arabica ? [arabica] : [],
+        recommendedProducts: coldBrewProd ? [coldBrewProd] : [],
         suggestions: [
           '🫖 Hướng dẫn pha Phin truyền thống',
-          '☕ Tư vấn hạt Arabica Cầu Đất',
+          '🌸 Cách pha V60 / Pour Over',
           '📦 Bảo quản cà phê thế nào?',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
@@ -161,7 +256,7 @@ export async function handleBaristaChat(
       const arabica = products.find((p) => p.slug.includes('arabica')) || products[0];
       return {
         reply:
-          '🌸 **Công thức pha Pour Over / V60 tôn hương hoa quả:**\n\n1. **Tỷ lệ 1:15:** 20g cà phê **Arabica Cầu Đất** (xay vừa) + 300ml nước nóng **90°C – 92°C**.\n2. **Blooming (Ủ nở):** Rót 40ml nước đầu tiên, chờ **35 giây** để cà phê thoát khí CO2 tươi.\n3. **Chiết xuất:** Rót xoắn ốc nhẹ nhàng 2 đợt (đến 180ml và 300ml) trong tổng thời gian **2 phút 15 giây – 2 phút 30 giây**.',
+          '🌸 **Công thức pha Pour Over / V60 tôn hương hoa quả:**\n\n1. **Tỷ lệ 1:15:** 20g cà phê **Arabica Cầu Đất** hoặc **Arabica Sơn La** (xay vừa) + 300ml nước nóng **90°C – 92°C**.\n2. **Blooming (Ủ nở):** Rót 40ml nước đầu tiên, chờ **35 giây** để cà phê thoát khí CO2 tươi.\n3. **Chiết xuất:** Rót xoắn ốc nhẹ nhàng 2 đợt (đến 180ml và 300ml) trong tổng thời gian **2 phút 15 giây – 2 phút 30 giây**.',
         intent: 'brewing_guide',
         recommendedProducts: arabica ? [arabica] : [],
         suggestions: [
@@ -169,29 +264,30 @@ export async function handleBaristaChat(
           '🧊 Cách ủ Cold Brew tại nhà',
           '☕ Xem các dòng cà phê đặc sản',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
-    if (/(bảo quản|giữ hương|hạn sử dụng)/i.test(q)) {
+    if (/(bảo quản|giữ hương|hạn sử dụng|tủ lạnh)/i.test(q)) {
       return {
         reply:
-          '🛡️ **Mẹo bảo quản cà phê rang mộc giữ trọn hương thơm:**\n\n• Luôn kéo kín khóa Zip sau khi lấy cà phê và bóp nhẹ để đẩy không khí thừa qua **van 1 chiều** trên túi MỘC Coffee.\n• Để nơi khô ráo, thoáng mát, tránh ánh nắng trực tiếp và **không bảo quản trong tủ lạnh** (vì cà phê dễ hút ẩm và mùi thực phẩm).\n• Ngon nhất trong vòng **30 – 45 ngày** kể từ khi mở túi (hoặc 6 tháng từ ngày rang).',
+          '🛡️ **Mẹo bảo quản cà phê rang mộc giữ trọn hương thơm:**\n\n• Luôn kéo kín khóa Zip sau khi lấy cà phê và bóp nhẹ để đẩy không khí thừa qua **Van 1 chiều** trên túi MỘC Coffee.\n• Để nơi khô ráo, thoáng mát (20°C – 28°C), tránh ánh nắng trực tiếp và **tuyệt đối không bảo quản trong tủ lạnh** (vì cà phê dễ ngưng tụ ẩm và hút mùi thực phẩm).\n• Ngon nhất trong vòng **30 – 45 ngày** kể từ khi mở túi (hoặc 6 tháng từ ngày rang).',
         intent: 'brewing_guide',
         suggestions: [
           '🫖 Hướng dẫn pha Phin chuẩn vị',
           '☕ Tư vấn cà phê hợp gu của mình',
-          '🚚 Chính sách giao hàng',
+          '🛡️ Quyền lợi khách hàng tại MỘC',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
-    // Mặc định hướng dẫn pha Phin Việt Nam
     const phinProducts = products.filter(
       (p) => p.slug.includes('phin') || p.slug.includes('robusta')
     );
     return {
       reply:
-        '🫖 **Bí quyết pha Phin Việt Nam sánh đậm, hậu ngọt:**\n\n1. **Tráng phin:** Tráng phin nhôm bằng nước sôi để làm nóng đều.\n2. **Định lượng:** Cho **25g cà phê** (khoảng 1/2 phin), lắc nhẹ cho phẳng mặt rồi đặt nắp gài vừa tay (không nén quá chặt).\n3. **Ủ cà phê (quan trọng nhất):** Châm **30ml nước sôi (94°C – 96°C)** vào ủ trong **1 – 2 phút** cho bột cà phê nở đều.\n4. **Chiết xuất:** Châm tiếp **50ml – 60ml nước sôi**, đậy nắp chờ từng giọt cà phê sánh đậm nhỏ xuống. Thêm đá hoặc 20ml sữa đặc là chuẩn vị!',
+        '🫖 **Bí quyết pha Phin Việt Nam sánh đậm, hậu ngọt:**\n\n1. **Tráng phin:** Tráng phin nhôm bằng nước sôi để làm nóng đều.\n2. **Định lượng:** Cho **25g cà phê** (khoảng 1/2 phin), lắc nhẹ cho phẳng mặt rồi đặt nắp gài vừa tay (không nén quá chặt).\n3. **Ủ cà phê (Blooming):** Châm **20ml – 30ml nước sôi (92°C – 96°C)** vào ủ trong **1 – 2 phút** cho bột cà phê nở đều.\n4. **Chiết xuất:** Châm tiếp **50ml – 60ml nước sôi**, đậy nắp chờ từng giọt cà phê sánh đậm nhỏ xuống. Thêm đá hoặc 20ml sữa đặc là chuẩn vị!',
       intent: 'brewing_guide',
       recommendedProducts: phinProducts.slice(0, 2),
       suggestions: [
@@ -199,109 +295,125 @@ export async function handleBaristaChat(
         '🌸 Cách pha V60 / Pour Over',
         '📦 Kiểm tra đơn hàng của tôi',
       ],
+      rag: buildRagTrace(synthModelName),
     };
   }
 
-  // 4. Kiểm tra câu hỏi về Giao hàng / Thanh toán / Đổi trả / Khuyến mãi
-  if (
-    /(phí ship|giao hàng|vận chuyển|freeship|miễn phí ship|bao lâu nhận|thanh toán|chuyển khoản|cod|đổi trả)/i.test(
-      q
-    )
-  ) {
+  // 6.2. Chính sách Giao hàng, Đổi trả & Quyền lợi khách hàng (Nâng cấp đầy đủ từ Knowledge Base)
+  if (isAskingPolicyOrBenefit) {
     return {
-      reply: `🚚 **Chính sách Giao hàng & Thanh toán tại MỘC Coffee:**\n\n• **Phí vận chuyển:** Đồng giá **${formatVND(shippingFee)}** toàn quốc. Đặc biệt **Miễn phí vận chuyển (Freeship)** cho mọi đơn hàng từ **${formatVND(freeThreshold)}** trở lên!\n• **Thời gian giao hàng:** Nội thành TP.HCM & Hà Nội từ **1 – 2 ngày**; các tỉnh thành khác từ **2 – 4 ngày làm việc**.\n• **Hình thức thanh toán:** Hỗ trợ **COD (Thanh toán khi nhận hàng - được đồng kiểm)** và **Chuyển khoản ngân hàng**.\n• **Cam kết chất lượng:** Đổi mới 100% miễn phí trong 7 ngày nếu bao bì rách hở van hoặc gửi nhầm hình thức xay.`,
+      reply: `🚚 **Chính sách Giao hàng, Đổi trả & Quyền lợi Khách hàng tại MỘC Coffee:**\n\n• **Phí vận chuyển:** Đồng giá **${formatVND(shippingFee)}** toàn quốc. **Miễn phí vận chuyển (Freeship)** cho mọi đơn hàng từ **${formatVND(freeThreshold)}** trở lên!\n• **Thời gian nhận hàng:** Xử lý & rang xay mới trong 24h. Giao nội thành TP.HCM, Hà Nội & Đắk Lắk từ **1 – 2 ngày**; các tỉnh khác từ **2 – 4 ngày làm việc**.\n• **Quyền lợi Đồng kiểm & Thanh toán:** Hỗ trợ **COD** (được kiểm tra ngoại quan gói hàng nguyên niêm phong trước khi thanh toán) và **Chuyển khoản ngân hàng**.\n• **Quyền lợi Xay miễn phí:** Tùy chọn để **Nguyên hạt** hoặc xay miễn phí theo **5 cỡ chuẩn** (Pha Phin, Pha Máy Espresso, Pour Over V60, Cold Brew).\n• **Cam kết Đổi mới 100% trong 7 ngày:** Đổi mới miễn phí nếu bao bì rách, hở van 1 chiều hoặc giao nhầm loại hạt/cỡ xay.`,
       intent: 'shipping_policy',
       suggestions: [
         '☕ Tư vấn chọn cà phê hợp gu',
+        '🌟 Lợi thế cà phê rang mộc MỘC Coffee',
         '📦 Kiểm tra đơn hàng của tôi',
-        '🫖 Hướng dẫn pha Phin ngon',
       ],
+      rag: buildRagTrace(synthModelName),
     };
   }
 
-  // 5. Kiểm tra câu hỏi về Câu chuyện thương hiệu / Nguồn gốc / Liên hệ
-  if (
-    /(nguồn gốc|nông trại|vùng trồng|câu chuyện|mộc coffee là|địa chỉ|hotline|liên hệ|số điện thoại shop|ở đâu)/i.test(
-      q
-    )
-  ) {
+  // 6.3. Câu chuyện thương hiệu, Nguồn gốc & Lợi thế cạnh tranh (Nâng cấp từ Knowledge Base)
+  if (isAskingBrandOrAdvantage) {
     return {
       reply:
-        '🌱 **Về MỘC Coffee — Hương Vị Việt. Đánh Thức Đam Mê:**\n\n• **100% Rang Mộc Nguyên Bản:** Không tẩm bơ, không hương liệu hóa học, không chất độn.\n• **Vùng nguyên liệu tuyển chọn:** Hạt Robusta sẻ chín đỏ từ **Buôn Ma Thuột (Đắk Lắk, độ cao 550m – 800m)** và hạt Arabica Catimor/Bourbon từ **Cầu Đất (Đà Lạt, độ cao 1.500m)**.\n• **Rang mới mỗi ngày:** Xưởng rang mẻ nhỏ (Small-batch Roasting) và xay miễn phí theo đúng dụng cụ pha của bạn.\n• **Hotline & Zalo hỗ trợ:** `1900 6868` — Email: `hello@moccoffee.vn`',
+        '🌱 **Về MỘC Coffee & 5 Lợi Thế Khác Biệt ("Hạt Mộc – Vị Nguyên Bản – Tâm Người Việt"):**\n\n1. **100% Rang Mộc Nguyên Bản:** Không tẩm bơ, không mỡ gà, không hương liệu hóa học, không độn bắp/đậu. Nước pha màu nâu hổ phách trong trẻo, an toàn cho sức khỏe.\n2. **Vùng nguyên liệu tuyển chọn 100% trái chín:** Robusta từ **Buôn Ma Thuột (Đắk Lắk, 500–800m)** & **Đắk Mil (Đắk Nông)**; Arabica từ **Cầu Đất (Đà Lạt, 1.500m)** & **Sơn La**.\n3. **Rang mẻ nhỏ (Small-batch Roasting) mới mỗi ngày:** Kiểm soát hồ sơ nhiệt riêng biệt để giữ vị ngọt hậu tự nhiên.\n4. **Bao bì Kraft khóa Zip & Van 1 chiều:** Thoát khí CO2 tự nhiên, ngăn oxy xâm nhập giúp giữ hương suốt 45 ngày.\n5. **Địa chỉ & Liên hệ:** Xưởng rang tại Buôn Ma Thuột, Đắk Lắk & Showroom Số 86 Nguyễn Huệ, Quận 1, TP.HCM — Hotline: `1900 6868` / `0901 234 567` — Email: `hello@moccoffee.vn`.',
       intent: 'brand_story',
       recommendedProducts: products.slice(0, 2),
       suggestions: [
+        '🛡️ Quyền lợi khách hàng khi mua tại MỘC',
         '☕ Tư vấn loại cà phê bán chạy nhất',
         '🫖 Cà phê nào hợp pha Phin sữa đá?',
-        '📦 Kiểm tra đơn hàng của tôi',
       ],
+      rag: buildRagTrace(synthModelName),
     };
   }
 
-  // 6. Tư vấn chọn cà phê theo gu thưởng thức (Barista Sommelier Engine)
-  const isAskingRecommendation =
-    /(tư vấn|chọn|loại nào|ngon|đậm|mạnh|sữa đá|đen đá|phin|chua|thơm|arabica|robusta|espresso|pha máy|blend|quà|biếu|giá|menu|sản phẩm|mua|gợi ý|ít cafein|say cà phê)/i.test(
-      q
-    );
-
+  // 6.4. Tư vấn chọn cà phê theo gu thưởng thức (Kết hợp RAG Vector Search + Sommelier Filter)
   if (isAskingRecommendation) {
-    // Phân tích gu cụ thể
-    if (/(chua thanh|thơm|hoa quả|trái cây|ít cafein|say cà phê|nhẹ nhàng|arabica|v60|pour over|cold brew)/i.test(q)) {
+    if (/(quà|biếu|đối tác|lễ tết|hộp quà)/i.test(q)) {
+      const giftMatched = products.filter(
+        (p) => p.slug.includes('hop-qua') || p.category_id === 4
+      );
+      return {
+        reply:
+          '🎁 Nếu bạn đang tìm món quà sang trọng, đậm bản sắc Việt dành tặng đối tác hoặc người thân, mình gợi ý **Hộp Quà Tinh Hoa Cà Phê Việt (750g)**.\n\nSet quà gồm trọn bộ **3 gói 250g** tiêu biểu nhất của MỘC (*Robusta Buôn Ma Thuột, Arabica Cầu Đất, Blend Phin Việt*) kèm **Phin nhôm cao cấp** và cẩm nang pha chế trong hộp giấy mỹ thuật chỉn chu!',
+        intent: 'recommendation',
+        recommendedProducts: giftMatched.length > 0 ? giftMatched : products.slice(0, 2),
+        suggestions: [
+          '🚚 Mua hộp quà có được Freeship không?',
+          '🫖 Tư vấn thêm dòng pha Phin đậm đà',
+          '📦 Kiểm tra đơn hàng của tôi',
+        ],
+        rag: buildRagTrace(synthModelName),
+      };
+    }
+
+    if (
+      /(chua thanh|thơm|hoa quả|trái cây|ít cafein|say cà phê|nhẹ nhàng|arabica|v60|pour over|cold brew|sơn la)/i.test(
+        q
+      )
+    ) {
       const matched = products.filter(
         (p) =>
           p.slug.includes('arabica') ||
-          p.slug.includes('espresso') ||
+          p.slug.includes('cold-brew') ||
           p.name.toLowerCase().includes('arabica')
       );
       return {
         reply:
-          '🌸 Với gu thích **hương thơm thanh tao, vị chua thanh dịu của trái cây chín, hậu ngọt mật ong và êm dịu (ít gây say)**, mình đặc biệt gợi ý cho bạn dòng **Arabica Cầu Đất (100% Trái Chín)** thu hái ở độ cao 1.500m tại Đà Lạt.\n\nDòng này cực kỳ hợp để pha **Pour Over (V60), Cold Brew, Pha Máy** hoặc phối trộn thêm vào Phin cho dậy hương thơm!',
+          '🌸 Với gu thích **hương thơm thanh tao, vị chua thanh dịu của trái cây chín, hậu ngọt mật ong và êm dịu (hàm lượng cafein thấp, không gây say)**, mình đặc biệt gợi ý cho bạn:\n\n• **Arabica Cầu Đất (1.500m):** Hương hoa trắng, cam thảo, hậu ngọt mật ong.\n• **Arabica Sơn La Bourbon:** Hương táo đỏ, trà đen dịu mượt.\n• **Cold Brew Signature Blend:** Tối ưu để ủ lạnh 18h thanh mát hương cam vàng & mơ chín.\n\nCác dòng này cực kỳ hợp để pha **Pour Over (V60), Cold Brew, Pha Máy** hoặc phối trộn thêm vào Phin!',
         intent: 'recommendation',
-        recommendedProducts: matched.length > 0 ? matched : products.slice(0, 2),
+        recommendedProducts: matched.length > 0 ? matched.slice(0, 3) : products.slice(0, 2),
         suggestions: [
           '🫖 Còn loại nào đậm đà pha Phin sữa đá?',
           '🧊 Cách ủ Cold Brew với Arabica Cầu Đất',
           '🚚 Mua bao nhiêu thì được Freeship?',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
     if (/(pha máy|espresso|latte|cappuccino|americano|crema)/i.test(q)) {
       const matched = products.filter(
-        (p) => p.slug.includes('espresso') || p.slug.includes('arabica')
+        (p) => p.slug.includes('espresso') || p.slug.includes('arabica') || p.slug.includes('honey')
       );
       return {
         reply:
-          '☕ Nếu bạn dùng **máy pha Espresso tại nhà hoặc văn phòng**, dòng **Espresso House Blend** (tỷ lệ vàng Arabica Cầu Đất & Robusta Honey) và **Arabica Cầu Đất** là lựa chọn hoàn hảo nhất!\n\nLớp crema dày mịn màu hạt dẻ, hương hạt dẻ nướng hòa quyện bơ đậu phộng, rất cân bằng cả khi uống **Espresso nguyên bản, Americano hay pha Latte/Cappuccino**.',
+          '☕ Nếu bạn dùng **máy pha Espresso tại nhà, văn phòng hoặc quán**, dòng **Espresso House Blend** (tỷ lệ vàng 50% Arabica Cầu Đất Washed & 50% Fine Robusta Honey) là lựa chọn hoàn hảo nhất!\n\nKhi chiết xuất ở 9 bar cho lớp crema dày mịn màu hạt dẻ, hương hạt phỉ hòa quyện cacao nguyên chất, rất cân bằng cả khi uống **Espresso nguyên bản, Americano hay pha Latte/Cappuccino**.',
         intent: 'recommendation',
-        recommendedProducts: matched.length > 0 ? matched : products.slice(0, 2),
+        recommendedProducts: matched.length > 0 ? matched.slice(0, 3) : products.slice(0, 2),
         suggestions: [
           '🫖 Tư vấn thêm dòng pha Phin đậm đà',
-          '📦 Mình muốn kiểm tra đơn hàng',
+          '🛡️ Quyền lợi xay miễn phí 5 cấp độ',
           '🚚 Chính sách giao hàng toàn quốc',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
-    if (/(đậm|mạnh|phin|sữa đá|đen đá|tỉnh táo|robusta|ít chua|không chua|truyền thống)/i.test(q)) {
+    if (/(đậm|mạnh|phin|sữa đá|đen đá|tỉnh táo|robusta|ít chua|không chua|truyền thống|đắk nông|honey)/i.test(q)) {
       const matched = products.filter(
         (p) => p.slug.includes('robusta') || p.slug.includes('phin')
       );
       return {
         reply:
-          '🔥 Nếu bạn yêu thích **gu cà phê Việt truyền thống: đậm đà, sánh quyện, không chua, hậu ngọt sô-cô-la đen và giúp tỉnh táo tức thì**, bạn nhất định phải thử bộ đôi bán chạy nhất của MỘC:\n\n1. **Robusta Buôn Ma Thuột (Chế biến Honey):** 100% Robusta sẻ Đắk Lắk rang đậm vừa, cực kỳ mạnh mẽ.\n2. **Blend Phin Việt (70% Robusta – 30% Arabica):** Đậm vị truyền thống nhưng có thêm tầng hương thơm quyến rũ của Arabica Cầu Đất, pha **cà phê sữa đá** hay **đen đá** đều tuyệt hảo!',
+          '🔥 Nếu bạn yêu thích **gu cà phê Việt truyền thống: đậm đà, sánh quyện, không chua, hậu ngọt sô-cô-la đen và giúp tỉnh táo tức thì**, bạn nhất định phải thử bộ sản phẩm bán chạy nhất của MỘC:\n\n1. **Robusta Buôn Ma Thuột:** 100% Robusta sẻ Đắk Lắk rang vừa đậm, thể chất dày dặn, cực kỳ mạnh mẽ.\n2. **Blend Phin Việt (70% Robusta – 30% Arabica):** Đậm vị truyền thống nhưng dậy tầng hương caramel & bơ hạt quyến rũ của Arabica Cầu Đất, pha **cà phê sữa đá** hay **đen đá** đều tuyệt hảo!\n3. **Fine Robusta Honey Đắk Nông:** Chế biến mật ong lên men tự nhiên, độ ngọt cao.',
         intent: 'recommendation',
-        recommendedProducts: matched.length > 0 ? matched : products.slice(0, 2),
+        recommendedProducts: matched.length > 0 ? matched.slice(0, 3) : products.slice(0, 2),
         suggestions: [
           '🌸 Có loại nào thơm nhẹ, ít cafein hơn không?',
           '🫖 Hướng dẫn pha Phin sánh đậm',
           '📦 Kiểm tra đơn hàng của tôi',
         ],
+        rag: buildRagTrace(synthModelName),
       };
     }
 
-    // Tổng quan tất cả dòng cà phê của MỘC Coffee
-    const summaryLines = products
+    // Tổng quan danh mục sản phẩm kết hợp kết quả từ RAG Vector DB
+    const displayProducts =
+      ragMatchedProducts.length > 0 ? ragMatchedProducts : products.slice(0, 4);
+    const summaryLines = displayProducts
       .slice(0, 4)
       .map(
         (p, idx) =>
@@ -310,86 +422,49 @@ export async function handleBaristaChat(
       .join('\n');
 
     return {
-      reply: `☕ Hiện tại **MỘC Coffee** có 4 dòng cà phê rang mộc tuyển chọn (hỗ trợ để **Nguyên hạt** hoặc **Xay miễn phí** theo phin/máy của bạn):\n\n${summaryLines}\n\nBạn thường thích uống **pha Phin đậm đà (đen đá/sữa đá)**, **pha Máy Espresso** hay thích vị **thơm thanh nhẹ nhàng** để mình chọn đúng loại hợp gu nhất cho bạn nhé?`,
+      reply: `☕ Hiện tại **MỘC Coffee** có đầy đủ các dòng cà phê rang mộc 100% tuyển chọn (hỗ trợ để **Nguyên hạt** hoặc **Xay miễn phí 5 cấp độ** theo phin/máy của bạn):\n\n${summaryLines}\n\nBạn thường thích uống **pha Phin đậm đà (đen đá/sữa đá)**, **pha Máy Espresso**, vị **thơm thanh nhẹ nhàng** hay tìm **Hộp quà biếu** để mình chọn đúng loại hợp gu nhất cho bạn nhé?`,
       intent: 'recommendation',
-      recommendedProducts: products.slice(0, 4),
+      recommendedProducts: displayProducts.slice(0, 4),
       suggestions: [
         '🫖 Mình thích pha Phin đậm đà, sữa đá',
         '🌸 Mình thích vị thơm thanh, ít đắng',
         '☕ Mình tìm cà phê pha máy Espresso',
-        '📦 Kiểm tra đơn hàng của tôi',
+        '🎁 Tư vấn Hộp quà tặng cà phê',
       ],
+      rag: buildRagTrace(synthModelName),
     };
   }
 
-  // 7. Nếu có cấu hình GEMINI_API_KEY trên môi trường Cloudflare, có thể gọi Gemini 2.5 Flash kèm dữ liệu D1 thực tế
-  const geminiKey = (c.env as any).GEMINI_API_KEY;
-  if (geminiKey && typeof geminiKey === 'string' && geminiKey.trim().length > 10) {
-    try {
-      const catalogContext = products
-        .map(
-          (p) =>
-            `- ${p.name} (Slug: ${p.slug}, Vùng: ${p.origin}, Giá: ${formatVND(p.sale_price ?? p.price)}, Hương vị: ${p.tasting_notes}, Tồn kho: ${p.stock})`
-        )
-        .join('\n');
-
-      const sysPrompt = `Bạn là Trợ lý Barista của thương hiệu cà phê đặc sản Việt Nam "MỘC Coffee — Hương Vị Việt. Đánh Thức Đam Mê.".
-Hãy trả lời ngắn gọn, ấm áp, lịch sự bằng tiếng Việt.
-Danh mục sản phẩm thực tế trong kho D1:
-${catalogContext}
-Chính sách giao hàng: Phí ship ${formatVND(shippingFee)}, miễn phí vận chuyển cho đơn từ ${formatVND(freeThreshold)}.`;
-
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey.trim()}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: sysPrompt }] },
-            contents: [
-              ...history.slice(-6).map((h) => ({
-                role: h.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: h.content }],
-              })),
-              { role: 'user', parts: [{ text: message }] },
-            ],
-          }),
-        }
-      );
-
-      if (geminiRes.ok) {
-        const geminiJson = (await geminiRes.json()) as any;
-        const aiText = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (aiText) {
-          return {
-            reply: aiText.trim(),
-            intent: 'general',
-            recommendedProducts: products.slice(0, 2),
-            suggestions: [
-              '☕ Tư vấn cà phê pha Phin đậm đà',
-              '🌸 Tư vấn Arabica Cầu Đất',
-              '📦 Kiểm tra đơn hàng của tôi',
-            ],
-          };
-        }
-      }
-    } catch {
-      // Fallback mượt mà về Barista Engine nội bộ nếu mạng hoặc key lỗi
-    }
+  // 7. Nếu câu hỏi chung khác nhưng Vector DB tìm thấy Chunk có độ tương đồng cao (>= 0.35), trả lời dựa trên Top Chunk
+  const bestChunk = ragSearchResult.topChunks[0];
+  if (bestChunk && bestChunk.score >= 0.35 && q.length >= 6) {
+    return {
+      reply: `💡 Theo thông tin từ hệ thống tri thức **MỘC Coffee**:\n\n${bestChunk.content}\n\nBạn cần mình tư vấn chi tiết hơn về dòng hạt cà phê nào hay kiểm tra đơn hàng không ạ?`,
+      intent: 'general',
+      recommendedProducts:
+        ragMatchedProducts.length > 0 ? ragMatchedProducts.slice(0, 2) : products.slice(0, 2),
+      suggestions: [
+        '🫖 Tư vấn cà phê pha Phin đậm đà',
+        '🛡️ Quyền lợi & Chính sách đổi trả',
+        '📦 Kiểm tra đơn hàng của tôi',
+      ],
+      rag: buildRagTrace(synthModelName),
+    };
   }
 
   // 8. Lời chào hoặc phản hồi mặc định thân thiện kèm gợi ý thông minh
   const greetingName = customer ? ` **${customer.full_name}**` : '';
   return {
-    reply: `Xin chào${greetingName}! 👋 Mình là **Trợ lý Barista của MỘC Coffee**.\n\nMình có thể giúp bạn:\n• ☕ **Tư vấn chọn hạt cà phê** hợp gu (Pha Phin truyền thống, Sữa đá, Pha máy Espresso, Pour Over hay Cold Brew).\n• 📦 **Tra cứu trạng thái đơn hàng** ngay tức thì bằng Số điện thoại hoặc Mã đơn.\n• 📖 **Hướng dẫn công thức pha chế** & bảo quản cà phê rang mộc.\n\nHôm nay bạn đang tìm hương vị cà phê như thế nào ạ?`,
+    reply: `Xin chào${greetingName}! 👋 Mình là **Trợ lý Barista AI của MỘC Coffee** (vận hành trên nền tảng **RAG Vector DB + Cloudflare Workers AI**).\n\nMình có thể giúp bạn:\n• ☕ **Tư vấn chọn hạt cà phê** hợp gu (Pha Phin truyền thống, Sữa đá, Pha máy Espresso, Pour Over V60 hay Cold Brew).\n• 🛡️ **Giải đáp Quyền lợi, Lợi thế & Chính sách** (Xay miễn phí 5 cấp độ, Freeship từ 500k, Đồng kiểm COD, Đổi mới 7 ngày).\n• 📦 **Tra cứu trạng thái đơn hàng** tức thì bằng Số điện thoại hoặc Mã đơn.\n\nHôm nay bạn đang tìm hương vị cà phê như thế nào ạ?`,
     intent: 'greeting',
     recommendedProducts: products.slice(0, 2),
     suggestions: [
       '🫖 Tư vấn cà phê pha Phin đậm đà',
       '🌸 Cà phê Arabica thơm hương hoa quả',
-      '☕ Cà phê pha máy Espresso',
+      '🛡️ Quyền lợi & Chính sách đổi trả',
+      '🌟 Lợi thế cà phê rang mộc MỘC Coffee',
       '📦 Kiểm tra đơn hàng của tôi',
-      '📖 Hướng dẫn pha Phin chuẩn vị',
     ],
+    rag: buildRagTrace(synthModelName),
   };
 }

@@ -274,3 +274,19 @@ CREATE TABLE IF NOT EXISTS blog_posts (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_blog_posts_slug ON blog_posts(slug);
+
+-- 16. Bảng lưu trữ Vector Embeddings cho RAG Chatbot (rag_chunks)
+CREATE TABLE IF NOT EXISTS rag_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chunk_key TEXT NOT NULL UNIQUE,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  product_slug TEXT,
+  embedding_model TEXT NOT NULL DEFAULT '@cf/baai/bge-m3',
+  embedding_dim INTEGER NOT NULL DEFAULT 1024,
+  embedding_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_category ON rag_chunks(category);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_product_slug ON rag_chunks(product_slug);

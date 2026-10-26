@@ -315,5 +315,24 @@ export interface ChatResponseData {
   recommendedProducts?: Product[];
   matchedOrders?: Order[];
   suggestions: string[];
+  rag?: RagTraceInfo;
 }
 
+
+export interface RagRetrievedChunk {
+  chunk_key: string;
+  category: string;
+  title: string;
+  content: string;
+  score: number;
+  product_slug?: string | null;
+}
+
+export interface RagTraceInfo {
+  pipeline: 'chunking -> word_embedding -> vector_db -> llm';
+  embeddingModel: string;
+  llmModel: string;
+  vectorBackend: 'cloudflare_vectorize' | 'd1_vector_store';
+  totalChunksIndexed: number;
+  topChunks: RagRetrievedChunk[];
+}

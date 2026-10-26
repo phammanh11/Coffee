@@ -21,6 +21,7 @@ interface MemoryStore {
   newsletter_subscribers: any[];
   reviews: any[];
   blog_posts: any[];
+  rag_chunks: any[];
   initialized: boolean;
 }
 
@@ -427,6 +428,7 @@ const mem: MemoryStore = {
       created_at: '2026-10-19 08:00:00',
     },
   ],
+  rag_chunks: [],
   initialized: false,
 };
 
@@ -1325,6 +1327,13 @@ export function createFallbackD1(): D1Database {
         return sorted.slice(0, 5);
       }
 
+      if (lower.startsWith('select count(*) as count from rag_chunks')) {
+        return [{ count: mem.rag_chunks.length }];
+      }
+      if (lower.startsWith('select * from rag_chunks')) {
+        return [...mem.rag_chunks];
+      }
+
       return [];
     }
 
@@ -1703,6 +1712,32 @@ export function createFallbackD1(): D1Database {
         }
         await persistToEdgeCache();
         return { success: true, meta: { changes: sc ? 1 : 0, last_row_id: 1 } };
+      }
+
+      if (lower.startsWith('delete from rag_chunks')) {
+        mem.rag_chunks = [];
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: 0 } };
+      }
+
+      if (lower.startsWith('insert or replace into rag_chunks') || lower.startsWith('insert into rag_chunks')) {
+        const chunkKey = String(bound[0] || '');
+        mem.rag_chunks = mem.rag_chunks.filter((c) => c.chunk_key !== chunkKey);
+        const id = mem.rag_chunks.length + 1;
+        mem.rag_chunks.push({
+          id,
+          chunk_key: chunkKey,
+          category: bound[1],
+          title: bound[2],
+          content: bound[3],
+          product_slug: bound[4] || null,
+          embedding_model: bound[5] || '@cf/baai/bge-m3',
+          embedding_dim: Number(bound[6]) || 1024,
+          embedding_json: bound[7] || '[]',
+          updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        });
+        await persistToEdgeCache();
+        return { success: true, meta: { changes: 1, last_row_id: id } };
       }
 
       await persistToEdgeCache();

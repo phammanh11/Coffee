@@ -3,12 +3,17 @@ import { hashPassword } from '../utils/crypto';
 export interface WorkerEnv {
   DB: D1Database;
   BUCKET: R2Bucket;
+  AI?: any;
+  VECTORIZE?: any;
   ASSETS?: Fetcher;
   ENVIRONMENT?: string;
   DEFAULT_SHIPPING_FEE?: string;
   FREE_SHIPPING_THRESHOLD?: string;
   ADMIN_BOOTSTRAP_EMAIL?: string;
   ADMIN_BOOTSTRAP_PASSWORD?: string;
+  CF_EMBEDDING_MODEL?: string;
+  CF_LLM_MODEL?: string;
+  GEMINI_API_KEY?: string;
 }
 
 let initialized = false;
@@ -253,6 +258,20 @@ export async function ensureDatabaseInitialized(env: WorkerEnv): Promise<void> {
           is_published INTEGER NOT NULL DEFAULT 1,
           published_at TEXT NOT NULL DEFAULT (datetime('now')),
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `),
+      env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS rag_chunks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chunk_key TEXT NOT NULL UNIQUE,
+          category TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          product_slug TEXT,
+          embedding_model TEXT NOT NULL DEFAULT '@cf/baai/bge-m3',
+          embedding_dim INTEGER NOT NULL DEFAULT 1024,
+          embedding_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
       `),
     ]);

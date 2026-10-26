@@ -3,10 +3,16 @@
   "name": "coffeet1",
   "compatibility_date": "2025-02-14",
   "pages_build_output_dir": "./dist",
+  // Tích hợp trực tiếp Cloudflare Workers AI (https://dash.cloudflare.com/.../ai/models)
+  "ai": {
+    "binding": "AI"
+  },
   "vars": {
     "ENVIRONMENT": "development",
     "DEFAULT_SHIPPING_FEE": "30000",
-    "FREE_SHIPPING_THRESHOLD": "500000"
+    "FREE_SHIPPING_THRESHOLD": "500000",
+    "CF_EMBEDDING_MODEL": "@cf/baai/bge-m3",
+    "CF_LLM_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
   },
   "d1_databases": [
     {

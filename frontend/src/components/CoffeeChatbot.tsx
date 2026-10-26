@@ -10,6 +10,7 @@ import {
   Package,
   RotateCcw,
   ChevronRight,
+  Database,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useCart } from '../features/cart/CartContext';
@@ -20,7 +21,7 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
 } from '../../shared/constants';
-import type { Order, Product } from '../../shared/types';
+import type { Order, Product, RagTraceInfo } from '../../shared/types';
 
 interface UIMessage {
   id: string;
@@ -29,17 +30,18 @@ interface UIMessage {
   timestamp: string;
   recommendedProducts?: Product[];
   matchedOrders?: Order[];
+  rag?: RagTraceInfo;
 }
 
-const CHAT_STORAGE_KEY = 'moc_barista_chat_v1';
+const CHAT_STORAGE_KEY = 'moc_barista_chat_v2';
 
 const DEFAULT_SUGGESTIONS = [
   '🫖 Tư vấn cà phê pha Phin đậm đà',
   '🌸 Cà phê Arabica thơm hương hoa quả',
-  '☕ Cà phê pha máy Espresso',
-  '📦 Kiểm tra đơn hàng của tôi',
+  '🎁 Quyền lợi khách hàng & Đổi trả 7 ngày',
+  '🏆 Lợi thế cạnh tranh của MỘC Coffee',
   '📖 Hướng dẫn pha Phin chuẩn vị',
-  '🚚 Chính sách phí giao hàng',
+  '📦 Kiểm tra đơn hàng của tôi',
 ];
 
 function formatRichMessage(text: string): React.ReactNode {
@@ -164,6 +166,7 @@ export function CoffeeChatbot() {
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         recommendedProducts: res.recommendedProducts,
         matchedOrders: res.matchedOrders,
+        rag: res.rag,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -372,6 +375,29 @@ export function CoffeeChatbot() {
                           </div>
                         ))}
                       </div>
+                    )}
+
+                    {/* Thông tin truy xuất RAG Vector DB & LLM */}
+                    {!isUser && msg.rag && msg.rag.topChunks && msg.rag.topChunks.length > 0 && (
+                      <details className="mt-2.5 pt-2 border-t border-[#E6DED3]/70 text-[10px] text-[#777067] group">
+                        <summary className="cursor-pointer select-none flex items-center gap-1 hover:text-[#A65F3B] transition-colors list-none">
+                          <Database className="w-3 h-3 text-[#A65F3B] shrink-0" />
+                          <span>
+                            RAG Vector ({msg.rag.topChunks.length}/{msg.rag.totalChunksIndexed} chunks •{' '}
+                            {msg.rag.llmModel})
+                          </span>
+                        </summary>
+                        <div className="mt-1.5 space-y-1 pl-1 border-l-2 border-[#E6DED3]">
+                          {msg.rag.topChunks.map((c) => (
+                            <div key={c.chunk_key} className="flex items-center justify-between gap-2">
+                              <span className="truncate text-[#4A2E24] font-medium">{c.title}</span>
+                              <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-[#F7F2EA] border border-[#E6DED3] text-[#A65F3B] shrink-0">
+                                {(c.score * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </div>
                   <span className="text-[10px] text-[#777067] mt-1 px-1">{msg.timestamp}</span>
