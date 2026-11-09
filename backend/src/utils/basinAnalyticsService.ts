@@ -33,6 +33,7 @@ export interface Analytics24hStats {
 const eventsBuffer: BasinStreamEvent[] = [];
 const BUFFER_MAX_SIZE = 10000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+let seeded = false;
 
 /**
  * Xóa bỏ các sự kiện cũ hơn 24 giờ khỏi buffer
@@ -79,13 +80,47 @@ export async function trackVisitAndStream(
 }
 
 /**
- * Thống kê trong 24 giờ qua:
- * - Tổng lượt truy cập
- * - Phân bổ theo quốc gia (số lượt & %)
- * - Phân bổ theo thiết bị (số lượt & %)
- * - Phân bổ theo giờ (24 mốc giờ)
+ * Nạp dữ liệu mô phỏng khi có request đầu tiên (lazy inside handler, KHÔNG chạy ở global scope)
+ */
+function ensureSampleDataLoaded(): void {
+  if (seeded || eventsBuffer.length > 0) return;
+  seeded = true;
+
+  const now = Date.now();
+  const countries = ['VN', 'VN', 'VN', 'VN', 'US', 'US', 'JP', 'SG', 'KR', 'DE', 'AU', 'FR', 'GB'];
+  const devices = ['Mobile', 'Mobile', 'Mobile', 'Desktop', 'Desktop', 'Tablet'];
+  const paths = ['/', '/shop', '/product/robusta-buon-ma-thuot', '/product/arabica-cau-dat', '/cart', '/about'];
+
+  for (let i = 0; i < 60; i++) {
+    const hoursAgo = Math.random() * 23.5;
+    const time = now - Math.floor(hoursAgo * 60 * 60 * 1000);
+    const country = countries[Math.floor(Math.random() * countries.length)];
+    const device = devices[Math.floor(Math.random() * devices.length)];
+    const path = paths[Math.floor(Math.random() * paths.length)];
+
+    eventsBuffer.push({
+      id: DEFAULT_SITE_ID,
+      country,
+      device,
+      time,
+      ip: `118.69.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+      meta: {
+        eventId: `init-${i}-${Date.now()}`,
+        path,
+        referrer: Math.random() > 0.5 ? 'https://google.com' : 'https://facebook.com',
+      },
+    });
+  }
+
+  eventsBuffer.sort((a, b) => (a.time || 0) - (b.time || 0));
+}
+
+/**
+ * Thống kê trong 24 giờ qua
  */
 export function get24hAnalyticsStats(): Analytics24hStats {
+  ensureSampleDataLoaded();
+
   const now = Date.now();
   purgeExpiredEvents(now);
 
@@ -153,43 +188,3 @@ export function get24hAnalyticsStats(): Analytics24hStats {
     hourlyTrends,
   };
 }
-
-/**
- * Nạp dữ liệu mô phỏng cho kiểm thử và trình diễn thống kê
- */
-export function seedSampleAnalyticsData(): void {
-  if (eventsBuffer.length > 0) return;
-
-  const now = Date.now();
-  const countries = ['VN', 'VN', 'VN', 'VN', 'US', 'US', 'JP', 'SG', 'KR', 'DE', 'AU', 'FR', 'GB'];
-  const devices = ['Mobile', 'Mobile', 'Mobile', 'Desktop', 'Desktop', 'Tablet'];
-  const paths = ['/', '/shop', '/product/robusta-buon-ma-thuot', '/product/arabica-cau-dat', '/cart', '/about'];
-
-  // Tạo 120 sự kiện mẫu rải đều trong 24 giờ qua với ID cố định 'coffeet1'
-  for (let i = 0; i < 120; i++) {
-    const hoursAgo = Math.random() * 23.5;
-    const time = now - Math.floor(hoursAgo * 60 * 60 * 1000);
-    const country = countries[Math.floor(Math.random() * countries.length)];
-    const device = devices[Math.floor(Math.random() * devices.length)];
-    const path = paths[Math.floor(Math.random() * paths.length)];
-
-    eventsBuffer.push({
-      id: DEFAULT_SITE_ID,
-      country,
-      device,
-      time,
-      ip: `118.69.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-      meta: {
-        eventId: crypto.randomUUID(),
-        path,
-        referrer: Math.random() > 0.5 ? 'https://google.com' : 'https://facebook.com',
-      },
-    });
-  }
-
-  // Sắp xếp theo thứ tự thời gian tăng dần
-  eventsBuffer.sort((a, b) => (a.time || 0) - (b.time || 0));
-}
-
-// Khởi tạo sẵn một lượng dữ liệu để khi gọi API thống kê có thể thấy biểu đồ ngay
-seedSampleAnalyticsData();
