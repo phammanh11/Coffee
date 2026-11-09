@@ -2,6 +2,7 @@ import type { Context, Next } from 'hono';
 import {
   parseDeviceType,
   type BasinStreamEvent,
+  DEFAULT_SITE_ID,
 } from '../utils/basinStream';
 import { trackVisitAndStream } from '../utils/basinAnalyticsService';
 
@@ -33,6 +34,7 @@ export function extractVisitorTelemetry(c: Context): BasinStreamEvent {
 
   // Meta metadata bổ sung hữu ích
   const meta: Record<string, unknown> = {
+    eventId: crypto.randomUUID(),
     path: req.path,
     method: req.method,
     referer: req.header('referer') || '',
@@ -41,7 +43,7 @@ export function extractVisitorTelemetry(c: Context): BasinStreamEvent {
   };
 
   return {
-    id: crypto.randomUUID(),
+    id: DEFAULT_SITE_ID, // Cố định 'coffeet1' theo cấu hình
     country: country.toUpperCase(),
     device,
     time: Date.now(),

@@ -4,6 +4,7 @@ import {
   type BasinStreamEvent,
   type BasinStreamResult,
   BASIN_STREAM_ENDPOINT,
+  DEFAULT_SITE_ID,
 } from './basinStream';
 
 export interface Analytics24hStats {
@@ -53,7 +54,7 @@ export async function trackVisitAndStream(
 ): Promise<{ streamResult: BasinStreamResult; event: BasinStreamEvent }> {
   const now = Date.now();
   const normalizedEvent: BasinStreamEvent = {
-    id: event.id || crypto.randomUUID(),
+    id: event.id || DEFAULT_SITE_ID,
     country: (event.country || 'VN').toUpperCase(),
     device: event.device || parseDeviceType(event.meta?.userAgent as string),
     time: typeof event.time === 'number' && !isNaN(event.time) ? event.time : now,
@@ -164,7 +165,7 @@ export function seedSampleAnalyticsData(): void {
   const devices = ['Mobile', 'Mobile', 'Mobile', 'Desktop', 'Desktop', 'Tablet'];
   const paths = ['/', '/shop', '/product/robusta-buon-ma-thuot', '/product/arabica-cau-dat', '/cart', '/about'];
 
-  // Tạo 120 sự kiện mẫu rải đều trong 24 giờ qua
+  // Tạo 120 sự kiện mẫu rải đều trong 24 giờ qua với ID cố định 'coffeet1'
   for (let i = 0; i < 120; i++) {
     const hoursAgo = Math.random() * 23.5;
     const time = now - Math.floor(hoursAgo * 60 * 60 * 1000);
@@ -173,12 +174,13 @@ export function seedSampleAnalyticsData(): void {
     const path = paths[Math.floor(Math.random() * paths.length)];
 
     eventsBuffer.push({
-      id: crypto.randomUUID(),
+      id: DEFAULT_SITE_ID,
       country,
       device,
       time,
       ip: `118.69.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
       meta: {
+        eventId: crypto.randomUUID(),
         path,
         referrer: Math.random() > 0.5 ? 'https://google.com' : 'https://facebook.com',
       },
@@ -191,4 +193,3 @@ export function seedSampleAnalyticsData(): void {
 
 // Khởi tạo sẵn một lượng dữ liệu để khi gọi API thống kê có thể thấy biểu đồ ngay
 seedSampleAnalyticsData();
-

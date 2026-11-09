@@ -55,7 +55,7 @@ export function BasinTrafficAnalytics() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: crypto.randomUUID(),
+          id: 'coffeet1',
           country: randomCountry,
           device: randomDevice,
           time: Date.now(),
@@ -72,7 +72,7 @@ export function BasinTrafficAnalytics() {
       if (res.ok && json.success) {
         setTestStatus({
           success: true,
-          message: `Stream thành công lên Basin Catalog (${randomCountry} • ${randomDevice}) — Committed: 1`,
+          message: `Stream thành công lên Basin Catalog với ID: coffeet1 (${randomCountry} • ${randomDevice}) — Committed: 1`,
         });
         loadData();
       } else {
@@ -128,7 +128,7 @@ SELECT
     COUNT(*) AS total_visits_24h,
     COUNT(DISTINCT ip) AS unique_visitors_24h
 FROM basin_catalog.website_traffic
-WHERE time >= (to_unixtimestamp(NOW()) * 1000 - 86400000);`,
+WHERE id = 'coffeet1' AND time >= (to_unixtimestamp(NOW()) * 1000 - 86400000);`,
     },
     {
       title: '2. Thống kê theo Quốc gia (Country Breakdown)',
@@ -138,7 +138,7 @@ SELECT
     COUNT(*) AS visit_count,
     ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage
 FROM basin_catalog.website_traffic
-WHERE time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
+WHERE id = 'coffeet1' AND time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
 GROUP BY country
 ORDER BY visit_count DESC;`,
     },
@@ -150,7 +150,7 @@ SELECT
     COUNT(*) AS visit_count,
     ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage
 FROM basin_catalog.website_traffic
-WHERE time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
+WHERE id = 'coffeet1' AND time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
 GROUP BY device
 ORDER BY visit_count DESC;`,
     },
@@ -161,7 +161,7 @@ SELECT
     from_unixtime(time / 1000, '%Y-%m-%d %H:00:00') AS hour_window,
     COUNT(*) AS visits
 FROM basin_catalog.website_traffic
-WHERE time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
+WHERE id = 'coffeet1' AND time >= (to_unixtimestamp(NOW()) * 1000 - 86400000)
 GROUP BY 1
 ORDER BY 1 ASC;`,
     },

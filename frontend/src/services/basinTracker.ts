@@ -35,6 +35,8 @@ export interface Analytics24hStatsResponse {
   endpoint: string;
 }
 
+export const SITE_ID = 'coffeet1';
+
 /**
  * Nhận diện loại thiết bị phía client dựa trên User-Agent và kích thước màn hình
  */
@@ -76,10 +78,11 @@ export function trackPageView(customPath?: string): void {
   const currentPath = customPath || window.location.pathname;
   const device = detectClientDevice();
   const eventPayload: BasinClientEvent = {
-    id: crypto.randomUUID(),
+    id: SITE_ID, // Định danh cố định 'coffeet1'
     device,
     time: Date.now(),
     meta: {
+      eventId: crypto.randomUUID(),
       path: currentPath,
       search: window.location.search,
       referrer: document.referrer || '',
@@ -123,4 +126,3 @@ export async function fetch24hAnalytics(): Promise<Analytics24hStatsResponse> {
   const json = (await res.json()) as { success: boolean; data: Analytics24hStatsResponse };
   return json.data;
 }
-

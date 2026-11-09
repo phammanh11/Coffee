@@ -1,11 +1,13 @@
 /**
  * Script gửi dữ liệu mô phỏng 24 giờ qua lên Basin Catalog Stream Endpoint
+ * Tất cả các sự kiện mang ID cố định 'coffeet1'
  * Endpoint: https://f8fb6f6f730b404fb2f273fd789d04df.ingest.cloudflare.com
  */
 
 import https from 'https';
 
 const STREAM_ENDPOINT = 'https://f8fb6f6f730b404fb2f273fd789d04df.ingest.cloudflare.com';
+const SITE_ID = 'coffeet1';
 
 const COUNTRIES = [
   'VN', 'VN', 'VN', 'VN', 'VN', // Việt Nam chiếm tỷ lệ lớn
@@ -67,12 +69,14 @@ function generateEvents(count = 50) {
     const ip = `118.${Math.floor(Math.random() * 100 + 50)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
 
     events.push({
-      id: `sim-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+      id: SITE_ID, // Cố định 'coffeet1'
       country,
       device,
       time: eventTime,
       ip,
       meta: {
+        eventId: `sim-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+        website: 'coffeet1.pages.dev',
         path,
         referrer,
         simulation: true,
@@ -121,7 +125,8 @@ async function main() {
   const eventCount = 60;
   console.log(`\n===============================================================`);
   console.log(`[Basin Stream] Bắt đầu tạo ${eventCount} sự kiện truy cập mẫu trong 24h qua...`);
-  console.log(`Endpoint: ${STREAM_ENDPOINT}`);
+  console.log(`ID cố định: ${SITE_ID}`);
+  console.log(`Endpoint  : ${STREAM_ENDPOINT}`);
   console.log(`===============================================================\n`);
 
   const events = generateEvents(eventCount);
@@ -147,7 +152,9 @@ async function main() {
     console.log(`Body        :`, JSON.stringify(response.body, null, 2));
 
     if (response.statusCode === 200 && response.body?.success) {
-      console.log(`\n🎉 THÀNH CÔNG! Đã stream ${response.body.result?.committed || events.length} sự kiện vào Basin Catalog.`);
+      console.log(`\n🎉 THÀNH CÔNG! Đã stream ${response.body.result?.committed || events.length} sự kiện vào Basin Catalog với id='coffeet1'.`);
+      console.log(`Trên Cloudflare SQL Studio bạn có thể truy vấn ngay:`);
+      console.log(`SELECT * FROM <ten_bang> WHERE id = 'coffeet1';`);
     } else {
       console.error(`\n❌ THẤT BẠI:`, response.body);
     }
@@ -157,4 +164,3 @@ async function main() {
 }
 
 main();
-

@@ -24,6 +24,7 @@ export interface BasinStreamResult {
 }
 
 export const BASIN_STREAM_ENDPOINT = 'https://f8fb6f6f730b404fb2f273fd789d04df.ingest.cloudflare.com';
+export const DEFAULT_SITE_ID = 'coffeet1';
 
 /**
  * Phân loại loại thiết bị (Mobile, Tablet, Desktop, Bot) dựa trên User-Agent string
@@ -86,9 +87,9 @@ export async function sendEventsToBasinStream(
     return { success: true, committed: 0 };
   }
 
-  // Chuẩn hóa dữ liệu trước khi gửi để đảm bảo đúng định dạng schema
+  // Chuẩn hóa dữ liệu trước khi gửi: ID mặc định là 'coffeet1' nếu không chỉ định
   const normalizedEvents: BasinStreamEvent[] = payload.map((ev) => ({
-    id: ev.id || crypto.randomUUID(),
+    id: ev.id || DEFAULT_SITE_ID,
     country: ev.country || 'VN',
     device: ev.device || 'Desktop',
     time: typeof ev.time === 'number' && !isNaN(ev.time) ? ev.time : Date.now(),
@@ -133,4 +134,3 @@ export async function sendEventsToBasinStream(
     };
   }
 }
-
