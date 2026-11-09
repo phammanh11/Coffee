@@ -1,3 +1,4 @@
+import { AnalyticsTracker } from './components/AnalyticsTracker';
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { MainLayout } from './layouts/MainLayout';
@@ -42,6 +43,7 @@ function PageLoader() {
 export function App() {
   return (
     <Suspense fallback={<PageLoader />}>
+      <AnalyticsTracker />
       <Routes>
         {/* Customer Routes */}
         <Route element={<MainLayout />}>

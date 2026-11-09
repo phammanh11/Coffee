@@ -1,3 +1,13 @@
+import { basinTrackingMiddleware, extractVisitorTelemetry } from './middleware/basinTracking';
+import {
+  get24hAnalyticsStats,
+  trackVisitAndStream,
+} from './utils/basinAnalyticsService';
+import {
+  BASIN_STREAM_ENDPOINT,
+  sendEventsToBasinStream,
+  type BasinStreamEvent,
+} from './utils/basinStream';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
@@ -46,6 +56,10 @@ type AppVariables = {
 export const app = new Hono<{ Bindings: WorkerEnv; Variables: AppVariables }>();
 
 // Global CORS & Security Headers cho API
+
+// Tự động ghi nhận lượt truy cập và stream lên Basin Catalog
+app.use('*', basinTrackingMiddleware);
+
 app.use(
   '/api/*',
   cors({
@@ -95,6 +109,59 @@ app.onError((err, c) => {
 // ============================================================================
 // PUBLIC APIs (/api/v1/*)
 // ============================================================================
+
+
+// ============================================================================
+// BASIN CATALOG ANALYTICS & STREAMING APIs
+// ============================================================================
+
+// 1. Ghi nhận lượt truy cập từ frontend (Client-side SPA) và stream lên Basin Catalog
+app.post('/api/v1/analytics/track', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as Partial<BasinStreamEvent>;
+    const autoTelemetry = extractVisitorTelemetry(c);
+
+    const mergedEvent: BasinStreamEvent = {
+      id: body.id || autoTelemetry.id,
+      country: body.country || autoTelemetry.country,
+      device: body.device || autoTelemetry.device,
+      time: body.time || autoTelemetry.time,
+      ip: autoTelemetry.ip,
+      meta: {
+        ...(autoTelemetry.meta || {}),
+        ...(body.meta || {}),
+        source: 'client_spa',
+      },
+    };
+
+    const result = await trackVisitAndStream(mergedEvent);
+    return ok(c, result, 'Đã ghi nhận và stream lên Basin Catalog');
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Lỗi xử lý tracking';
+    return fail(c, 'TRACKING_ERROR', message, 400);
+  }
+});
+
+// 2. Lấy dữ liệu thống kê lượt truy cập, quốc gia, thiết bị trong 24h qua
+app.get('/api/v1/analytics/stats-24h', async (c) => {
+  const stats = get24hAnalyticsStats();
+  return ok(c, {
+    ...stats,
+    endpoint: BASIN_STREAM_ENDPOINT,
+  });
+});
+
+// 3. Gửi sự kiện trực tiếp lên Basin Catalog Stream
+app.post('/api/v1/analytics/stream', async (c) => {
+  try {
+    const body = (await c.req.json()) as Partial<BasinStreamEvent>;
+    const result = await trackVisitAndStream(body);
+    return ok(c, result, 'Đã gửi sự kiện lên Basin Catalog Stream');
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Lỗi gửi stream';
+    return fail(c, 'STREAM_ERROR', message, 400);
+  }
+});
 
 // 1. Health Check
 app.get('/api/v1/health', async (c) => {

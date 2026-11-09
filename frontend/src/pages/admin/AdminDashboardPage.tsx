@@ -1,3 +1,4 @@
+import { BasinTrafficAnalytics } from '../../components/BasinTrafficAnalytics';
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
